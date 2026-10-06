@@ -32,6 +32,23 @@ Other features · 其他：
 - **HTML report** export with inputs, results, numbered calculation steps and NEC references, in the selected language. 匯出 HTML 計算書（含輸入、結果、步驟與條文）。
 - Save and open projects as JSON. 專案存檔／開啟。
 
+## Mobile web version · 手機網頁版
+
+`web/` holds a phone-friendly version that runs in any browser (iPhone, Android, tablet, PC) with nothing to install. It covers the same six modules: branch/feeder, motor, transformer, MV cable, cable tray and panel load calculation. It also switches between 中文/EN and NEC 2023/2026.
+`web/` 為手機版網頁，iPhone / Android / 平板 / 電腦瀏覽器皆可直接使用，不需安裝，功能與桌面版相同（分路、馬達、變壓器、高壓電纜、電纜架、盤負載），可切換中英文與 NEC 版本。
+
+- `web/necalc.js` is a line-for-line JavaScript port of the Python engine.
+- `web/necalc_data.js` is generated from `necalc/tables.py`, `codes.py` and `i18n.py` by `python web/build_data.py`, so both versions use the same NEC data and wording.
+- `web/crosscheck.py` and `web/crosscheck.js` run thousands of random cases through both engines and require every number and every sentence (English and Chinese) to match. `tests/test_web_crosscheck.py` runs this whenever Node.js is installed.
+
+```bash
+python web/build_data.py            # after editing tables / codes / i18n
+python web/crosscheck.py 1500 && node web/crosscheck.js
+```
+
+To try it locally, open `web/index.html` in a browser.
+本機使用：直接用瀏覽器開啟 `web/index.html`。
+
 ## Quick start · 快速開始
 
 ```bash
@@ -102,6 +119,7 @@ nec-calc/
 │   ├── i18n.py             English / 中文 text
 │   ├── report.py           Text / HTML / CSV output
 │   └── gui.py              Tkinter GUI
+├── web/                    Mobile web version (JS port + cross-check vs Python)
 ├── examples/system_24900_to_120.py
 └── tests/
 ```

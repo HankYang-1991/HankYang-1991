@@ -774,6 +774,8 @@ def design_transformer(x: TransformerInput, sec_wiring: WiringInput = None,
         else:
             p_max_std = max_std_ocpd(p_max)
         p_sel = next_std_ocpd(i_pri * 1.25)
+        if p_sel is None:
+            raise CalcError("err_ocpd_range", amps=round(i_pri * 1.25, 1))
         if p_max_std and p_sel > p_max_std:
             p_sel = p_max_std
         res.add("st_xfmr_pri_lv", ref("xfmr_lv", ed), scheme=x.lv_scheme,
@@ -784,6 +786,8 @@ def design_transformer(x: TransformerInput, sec_wiring: WiringInput = None,
     if s_pct:
         s_max = i_sec * s_pct
         s_sel = next_std_ocpd(i_sec * 1.25)
+        if s_sel is None:
+            raise CalcError("err_ocpd_range", amps=round(i_sec * 1.25, 1))
         s_max_std = next_std_ocpd(s_max) if s_pct in (1.25,) \
             else max_std_ocpd(s_max)
         if s_max_std and s_sel and s_sel > s_max_std:

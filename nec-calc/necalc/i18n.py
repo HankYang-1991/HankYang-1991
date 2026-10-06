@@ -519,6 +519,45 @@ TEXT = {
     "err_tray_od": ("No OD data for size {size} - enter OD",
                     "{size} 無外徑資料，請輸入外徑"),
 
+
+    # ---------------- web / mobile ----------------
+    "web_subtitle": ("24.9 kV to 120 V · NEC conductor, OCPD, conduit, "
+                     "cable tray and load calculations",
+                     "24.9 kV 至 120 V · 依 NEC 選定導線、保護設備、導線管、"
+                     "電纜架及負載計算"),
+    "nav_branch": ("Branch", "分路"),
+    "nav_motor": ("Motor", "馬達"),
+    "nav_xfmr": ("Xfmr", "變壓器"),
+    "nav_mv": ("MV", "高壓"),
+    "nav_tray": ("Tray", "電纜架"),
+    "nav_load": ("Load", "負載"),
+    "copy_results": ("Copy results", "複製結果"),
+    "copied": ("Copied", "已複製"),
+    "copy_failed": ("Copy blocked - text selected, copy it manually",
+                    "無法自動複製，已選取文字，請手動複製"),
+    "more_settings": ("Wiring and conditions", "配線與安裝條件"),
+    "cables_in_tray": ("Cables in tray", "電纜清單"),
+    "loads_in_panel": ("Loads", "負載清單"),
+    "edit": ("Edit", "編輯"),
+    "cancel": ("Cancel", "取消"),
+    "save_item": ("Save", "儲存"),
+    "add_cable": ("Add cable", "新增電纜"),
+    "add_load": ("Add load", "新增負載"),
+    "confirm_clear": ("Tap again to clear all", "再按一次以全部清除"),
+    "auto_calc_note": ("Results update as you type.", "輸入時自動計算。"),
+    "mv_from_tab": ("The MV primary cable uses the settings on the MV tab "
+                    "(fault current, insulation, conduit).",
+                    "一次側高壓電纜沿用「高壓」頁設定（故障電流、絕緣、管種）。"),
+    "empty_tray": ("No cables yet. Add the first cable above.",
+                   "尚無電纜，請由上方新增第一條。"),
+    "empty_load": ("No loads yet. Add the first load above.",
+                   "尚無負載，請由上方新增第一筆。"),
+    "example_note": ("Example data - replace with your project values.",
+                     "範例資料，請改為專案數值。"),
+    "vd_meter": ("Voltage drop vs limit", "壓降 / 限制"),
+    "fill_meter": ("Conduit fill vs 40 %", "導線管填充 / 40 %"),
+    "tray_meter": ("Tray width used", "電纜架寬度使用率"),
+
     # ---------------- errors ----------------
     "err_ambient": ("Ambient {ambient} °C not permitted for {temp} °C "
                     "conductors", "周溫 {ambient} °C 不適用於 {temp} °C 導線"),

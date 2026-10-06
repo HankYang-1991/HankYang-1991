@@ -1,0 +1,911 @@
+<title>NEC Electrical Calculator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<style>
+/* Layout: phone-first single column (inputs, then results) with a fixed
+   bottom module bar; two columns (inputs | results) from 960 px. */
+:root {
+  --bg: #eef1f3; --surface: #ffffff; --surface-2: #f5f7f8; --ink: #16202a;
+  --muted: #5a6672; --line: #d5dce2; --accent: #b4531a; --accent-ink: #ffffff;
+  --accent-soft: #f7e8dd; --ok: #1d7a4b; --ok-soft: #e0f2e7; --ng: #c0352b;
+  --ng-soft: #fbe4e1; --warn: #8f5d00; --warn-soft: #fbf0d4; --focus: #1f6feb;
+  --f-display: "Barlow Condensed", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  --f-body: "IBM Plex Sans", "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Noto Sans TC", monospace;
+  --r: 10px; --nav-h: 62px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1418; --surface: #172028; --surface-2: #1c2630; --ink: #e4eaef;
+    --muted: #94a1ad; --line: #2b3844; --accent: #e78c50; --accent-ink: #1b0f06;
+    --accent-soft: #3a2618; --ok: #4cc488; --ok-soft: #153526; --ng: #ff8174;
+    --ng-soft: #3d1c19; --warn: #e8b64d; --warn-soft: #382c11; --focus: #73a9ff;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1418; --surface: #172028; --surface-2: #1c2630; --ink: #e4eaef;
+  --muted: #94a1ad; --line: #2b3844; --accent: #e78c50; --accent-ink: #1b0f06;
+  --accent-soft: #3a2618; --ok: #4cc488; --ok-soft: #153526; --ng: #ff8174;
+  --ng-soft: #3d1c19; --warn: #e8b64d; --warn-soft: #382c11; --focus: #73a9ff;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { background: var(--bg); color: var(--ink); }
+body {
+  font: 15px/1.5 var(--f-body); margin: 0;
+  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 16px);
+  -webkit-text-size-adjust: 100%;
+}
+button, input, select { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- top bar ---------- */
+.top {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.top-in {
+  max-width: 1180px; margin: 0 auto; padding-block: 10px; padding-inline: 16px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex: 1 1 200px; }
+.brand b {
+  font: 600 26px/1 var(--f-display); letter-spacing: .02em; color: var(--accent);
+}
+.brand span { font-size: 13px; color: var(--muted); line-height: 1.3; }
+@media (max-width: 640px) {
+  .brand span { display: none; }
+  .brand { flex: 1 1 auto; }
+  .top-in { flex-wrap: nowrap; gap: 8px; }
+  .seg button { padding: 5px 9px; }
+}
+.lead { color: var(--muted); font-size: 13px; margin: 0 0 2px; }
+@media (min-width: 641px) { .lead { display: none; } }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; padding: 2px; background: var(--surface); }
+.seg button {
+  border: 0; background: transparent; padding: 5px 11px; border-radius: 999px;
+  font-size: 13px; font-weight: 500; color: var(--muted); cursor: pointer; min-height: 32px;
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+
+/* ---------- layout ---------- */
+main { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 14px 8px; }
+.module { display: grid; gap: 14px; }
+.module > * { min-width: 0; }
+@media (min-width: 960px) {
+  .module { grid-template-columns: minmax(0, 430px) minmax(0, 1fr); align-items: start; }
+  .module .inputs { position: sticky; top: 76px; max-height: calc(100vh - 160px); overflow: auto; padding-right: 4px; }
+}
+h2.mod-title { font: 600 24px/1.1 var(--f-display); margin: 2px 0 2px; letter-spacing: .01em; text-wrap: balance; }
+.mod-sub { color: var(--muted); font-size: 13px; margin: 0; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; }
+.inputs { display: grid; gap: 12px; align-content: start; }
+.eyebrow {
+  font-size: 11.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+  font-weight: 600; margin: 0 0 8px;
+}
+
+/* ---------- form ---------- */
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.fld { display: grid; gap: 4px; min-width: 0; }
+.fld.wide { grid-column: 1 / -1; }
+.fld .lbl { font-size: 12.5px; color: var(--muted); line-height: 1.25; }
+.fld input:not([type=checkbox]), .fld select {
+  width: 100%; min-width: 0; height: 42px; padding: 0 10px; font-size: 16px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface-2);
+  font-variant-numeric: tabular-nums;
+}
+.fld select { padding-right: 6px; }
+.fld.chk { grid-template-columns: auto 1fr; align-items: center; gap: 10px; grid-column: 1 / -1; min-height: 36px; }
+.fld.chk input { width: 20px; height: 20px; accent-color: var(--accent); }
+.fld.chk .lbl { font-size: 14px; color: var(--ink); }
+details.more { border-top: 1px dashed var(--line); margin-top: 12px; padding-top: 4px; }
+details.more > summary {
+  cursor: pointer; list-style: none; padding: 8px 0; font-weight: 600; font-size: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::before { content: "+"; font: 600 18px/1 var(--f-mono); color: var(--accent); width: 14px; }
+details.more[open] > summary::before { content: "−"; }
+.note { font-size: 12.5px; color: var(--muted); margin: 8px 0 0; }
+.btn {
+  border: 1px solid var(--line); background: var(--surface); border-radius: 8px;
+  min-height: 40px; padding: 0 14px; font-weight: 500; cursor: pointer;
+}
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--ng); }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+/* ---------- list items (loads / cables) ---------- */
+.list { display: grid; gap: 8px; margin-top: 10px; }
+.item {
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--surface-2);
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: start;
+}
+.item .nm { font-weight: 600; overflow-wrap: anywhere; }
+.item .meta { grid-column: 1 / 2; font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.item .act { grid-row: 1 / span 2; grid-column: 2; display: flex; gap: 6px; }
+.item .act button { min-height: 34px; padding: 0 10px; font-size: 13px; }
+.item.editing { grid-template-columns: 1fr; background: var(--surface); border-color: var(--accent); }
+.tag {
+  display: inline-block; font-size: 11.5px; padding: 1px 7px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--ink); margin-right: 4px; white-space: nowrap;
+}
+.empty { color: var(--muted); font-size: 14px; padding: 12px; border: 1px dashed var(--line); border-radius: 8px; text-align: center; }
+
+/* ---------- results ---------- */
+.results { display: grid; gap: 12px; align-content: start; }
+.res-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.res-head h3 { margin: 0; font: 600 20px/1.1 var(--f-display); letter-spacing: .02em; }
+.callout {
+  border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line);
+  border-left: 4px solid var(--accent); padding: 10px 12px; margin-top: 10px;
+}
+.wire { font: 500 15px/1.45 var(--f-mono); overflow-wrap: anywhere; }
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-top: 10px; }
+.key { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.key .k { font-size: 12px; color: var(--muted); line-height: 1.2; }
+.key .v { font: 600 24px/1.15 var(--f-display); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.key .v.txt { font-size: 19px; }
+dl.kv.stack { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+dl.kv.stack dd { text-align: left; margin-bottom: 6px; }
+dl.kv { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 6px 14px; margin: 12px 0 0; font-size: 14px; }
+dl.kv dt { color: var(--muted); }
+dl.kv dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: right; }
+.meters { display: grid; gap: 10px; margin-top: 12px; }
+.meter .mrow { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--muted); }
+.meter .mrow b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+.track { position: relative; height: 8px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line); margin-top: 4px; overflow: hidden; }
+.track i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--ok); }
+.track.warn i { background: var(--warn); }
+.track.ng i { background: var(--ng); }
+.track s { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--ink); opacity: .55; }
+details.steps { margin-top: 12px; border-top: 1px solid var(--line); }
+details.steps > summary { cursor: pointer; padding: 10px 0 4px; font-weight: 600; font-size: 14px; }
+ol.steplist { margin: 4px 0 0; padding: 0; list-style: none; counter-reset: st; display: grid; gap: 8px; }
+ol.steplist li {
+  counter-increment: st; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 2px 8px;
+  font-size: 14px; line-height: 1.45;
+}
+ol.steplist li::before {
+  content: counter(st); font: 500 12px/1.9 var(--f-mono); color: var(--muted); text-align: right;
+}
+ol.steplist li .tx { overflow-wrap: anywhere; }
+ol.steplist li .rf { grid-column: 2; display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  font: 500 11.5px/1.6 var(--f-mono); padding: 0 7px; border-radius: 5px;
+  border: 1px solid var(--line); color: var(--muted); background: var(--surface-2); overflow-wrap: anywhere;
+}
+.chip.ok { color: var(--ok); background: var(--ok-soft); border-color: transparent; }
+.chip.ng { color: var(--ng); background: var(--ng-soft); border-color: transparent; }
+.warns { margin-top: 12px; display: grid; gap: 6px; }
+.warns p { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--warn-soft); color: var(--ink); font-size: 13.5px; border-left: 3px solid var(--warn); }
+.err { padding: 12px; border-radius: 8px; background: var(--ng-soft); border-left: 4px solid var(--ng); }
+.sub { margin-top: 14px; padding-top: 12px; border-top: 2px solid var(--line); }
+.sub > h4 { margin: 0 0 4px; font: 600 18px/1.2 var(--f-display); letter-spacing: .02em; }
+.toast { font-size: 12.5px; color: var(--ok); min-height: 1em; }
+.tbl-wrap { overflow-x: auto; margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; }
+table.cap { border-collapse: collapse; width: 100%; font-size: 13px; font-variant-numeric: tabular-nums; }
+table.cap th, table.cap td { padding: 6px 9px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+table.cap th:first-child, table.cap td:first-child { text-align: left; position: sticky; left: 0; background: var(--surface); }
+table.cap thead th { background: var(--surface-2); font-weight: 600; }
+.phasebars { display: grid; gap: 6px; margin-top: 12px; }
+.pb { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; font-variant-numeric: tabular-nums; }
+.pb .bar { height: 10px; border-radius: 3px; background: var(--surface-2); border: 1px solid var(--line); overflow: hidden; }
+.pb .bar i { display: block; height: 100%; background: var(--accent); }
+.disc { color: var(--muted); font-size: 12px; margin: 18px 0 0; max-width: 70ch; }
+.example { font-size: 12px; color: var(--warn); margin: 6px 0 0; }
+
+/* ---------- bottom module bar ---------- */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+  background: var(--surface); border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.tabbar-in { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.tabbar button {
+  border: 0; background: transparent; height: var(--nav-h); display: grid; place-items: center;
+  align-content: center; gap: 2px; font-size: 12px; color: var(--muted); cursor: pointer; position: relative;
+  padding: 0 2px;
+}
+.tabbar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tabbar button[aria-current="page"] { color: var(--accent); font-weight: 600; }
+.tabbar button[aria-current="page"]::before {
+  content: ""; position: absolute; top: 0; left: 22%; right: 22%; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent);
+}
+.tabbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .track i, .pb .bar i { transition: width .25s ease; }
+}
+</style>
+
+<header class="top">
+  <div class="top-in">
+    <div class="brand"><b>NEC</b><span id="subtitle"></span></div>
+    <div class="seg" role="group" aria-label="Language">
+      <button type="button" data-lang="zh">中文</button><button type="button" data-lang="en">EN</button>
+    </div>
+    <div class="seg" role="group" aria-label="NEC edition">
+      <button type="button" data-ed="2023">2023</button><button type="button" data-ed="2026">2026</button>
+    </div>
+  </div>
+</header>
+<main id="app"><noscript>This calculator needs JavaScript.</noscript></main>
+<nav class="tabbar" aria-label="Modules"><div class="tabbar-in" id="tabbar"></div></nav>
+
+<script src="necalc_data.js"></script>
+<script src="necalc.js"></script>
+<script>
+(function () {
+  "use strict";
+  var N = window.NECALC, D = N.DATA, T = N.T;
+  var STORE = "necalc-web-v1";
+
+  // ------------------------------------------------------------------ state
+  function wDef(o) {
+    return Object.assign({ voltage: "208", wiring: "3ph4w", mat: "cu", ins: "THHN", term: "75",
+      conduit: "EMT", min: "12", len: "100", pf: "0.9", vd: "3", amb: "30", extra: "0",
+      sets: "0", max: "500", nccc: false }, o);
+  }
+  var EXAMPLE_LOADS = [
+    { name: "Office lighting", category: "lighting", qty: 12, rating: 600, unit: "VA", pf: 0.95, voltage: 120, phases: 1, continuous: true },
+    { name: "General receptacles", category: "receptacle", qty: 60, rating: 180, unit: "VA", pf: 0.9, voltage: 120, phases: 1 },
+    { name: "AHU-1 supply fan", category: "motor", qty: 1, rating: 10, unit: "HP", pf: 0.85, voltage: 208, phases: 3 },
+    { name: "EF-1 exhaust fan", category: "motor", qty: 2, rating: 1, unit: "HP", pf: 0.8, voltage: 208, phases: 3 },
+    { name: "Unit heater", category: "heating", qty: 2, rating: 5, unit: "kW", pf: 1, voltage: 208, phases: 1 },
+    { name: "Split A/C", category: "cooling", qty: 1, rating: 7.5, unit: "kVA", pf: 0.88, voltage: 208, phases: 3 },
+    { name: "Water heater", category: "equipment", qty: 1, rating: 4.5, unit: "kW", pf: 1, voltage: 208, phases: 1, continuous: true }
+  ];
+  var EXAMPLE_CABLES = [
+    { name: "FDR-1 (2 sets)", kind: "lv_multi", size: "500", n_cond: 3, qty: 2 },
+    { name: "FDR-2", kind: "lv_multi", size: "4/0", n_cond: 4, qty: 1 },
+    { name: "Branch circuits", kind: "lv_multi", size: "10", n_cond: 3, qty: 12 },
+    { name: "Control", kind: "control", size: "14", n_cond: 3, qty: 8, od_in: 0.55 }
+  ];
+  function defaults() {
+    return {
+      lang: "zh", ed: "2023", tab: "br",
+      br: { kind: "branch", type: "lighting", value: "1440", unit: "VA", pf: "0.9", cont: "100", ocpd: "", motor_va: "0" },
+      brw: wDef({ voltage: "120", wiring: "1ph2w" }),
+      mo: { hp: "10", device: "itcb", fla: "", flc: "", sf: true, eeb: false },
+      mow: wDef({ voltage: "480", wiring: "3ph3w", len: "150", pf: "0.85" }),
+      xf: { kva: "1500", pri_v: "24900", sec_v: "480", phases: "3", z: "5.75", loc: "any",
+            pri_dev: "fuse", sec_dev: "cb", scheme: "pri_sec", pri_len: "100" },
+      xfw: wDef({ wiring: "3ph4w", len: "25", vd: "2", conduit: "RMC" }),
+      mv: { kv: "24.9", amps: "35", mat: "cu", ins: "25kV_133", df: "1.25", ocpd_type: "fuse", ocpd: "65",
+            fault: "10", time: "0.5", t1: "90", t2: "250", conduit: "PVC40", od: "0", egc: true },
+      tr: { type: "ladder", depth: "4", width: "0", covered: false, arr: "random", ambient: "30",
+            cables: EXAMPLE_CABLES.map(function (c) { return N.trayCable(c); }), example: true,
+            cap_kind: "lv_multi", cap_n: "3", cap_mat: "cu", cap_ins: "25kV_133", show_cap: false },
+      lc: { name: "LP-1", system: "208Y/120", div: "1.0", tpf: "0.95",
+            loads: EXAMPLE_LOADS.map(function (l) { return N.loadItem(l); }), example: true },
+      lcw: wDef({ len: "100", vd: "2" })
+    };
+  }
+  function loadState() {
+    var d = defaults();
+    try {
+      var raw = localStorage.getItem(STORE);
+      if (raw) {
+        var s = JSON.parse(raw);
+        Object.keys(d).forEach(function (k) {
+          if (s[k] === undefined) return;
+          d[k] = (typeof d[k] === "object" && d[k] !== null && !Array.isArray(d[k]))
+            ? Object.assign(d[k], s[k]) : s[k];
+        });
+      }
+    } catch (e) { /* storage unavailable: start from defaults */ }
+    return d;
+  }
+  var S = loadState();
+  var UI = { edit: { lc: null, tr: null }, draft: { lc: null, tr: null }, clearArm: {}, stepsOpen: {} };
+  function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* ignore */ } }
+
+  function t(k, p) { return N.tr(k, S.lang, p); }
+  function o(c) { return N.opt(c, S.lang); }
+  function esc(s) {
+    return String(s === null || s === undefined ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function getPath(path) {
+    var parts = path.split("."), obj = parts[0] === "@draft" ? UI.draft : S;
+    for (var i = parts[0] === "@draft" ? 1 : 0; i < parts.length; i++) obj = obj == null ? undefined : obj[parts[i]];
+    return obj;
+  }
+  function setPath(path, v) {
+    var parts = path.split("."), obj = parts[0] === "@draft" ? UI.draft : S;
+    var i0 = parts[0] === "@draft" ? 1 : 0;
+    for (var i = i0; i < parts.length - 1; i++) obj = obj[parts[i]];
+    obj[parts[parts.length - 1]] = v;
+  }
+  function num(v, labelKey, optional) {
+    var s = String(v === null || v === undefined ? "" : v).trim();
+    if (s === "") {
+      if (optional) return null;
+      throw new N.CalcError("err_input", { field: t(labelKey) });
+    }
+    var x = Number(s);
+    if (!isFinite(x)) throw new N.CalcError("err_input", { field: t(labelKey) });
+    return x;
+  }
+
+  // ------------------------------------------------------------------ fields
+  function F(path, label, type, extra) { return Object.assign({ path: path, label: label, type: type }, extra || {}); }
+  var sizeLab = function (c) { return N.sizeLabel(c); };
+  function fieldHtml(f) {
+    var v = getPath(f.path), id = "f-" + f.path.replace(/[@.]/g, "-");
+    var cls = "fld" + (f.wide ? " wide" : "");
+    if (f.type === "chk")
+      return '<label class="fld chk" for="' + id + '"><input type="checkbox" id="' + id + '" data-path="' + f.path +
+        '" data-type="chk"' + (v ? " checked" : "") + '><span class="lbl">' + esc(t(f.label)) + "</span></label>";
+    var ctl;
+    if (f.type === "sel") {
+      ctl = '<select id="' + id + '" data-path="' + f.path + '" data-type="' + (f.numeric ? "selnum" : "sel") + '">' +
+        f.opts.map(function (c) {
+          var lab = f.lab ? f.lab(c) : o(c);
+          return '<option value="' + esc(c) + '"' + (String(v) === String(c) ? " selected" : "") + ">" + esc(lab) + "</option>";
+        }).join("") + "</select>";
+    } else {
+      var list = f.list ? ' list="dl-' + id + '"' : "";
+      var mode = f.type === "text" ? 'type="text" autocomplete="off"' : 'type="text" inputmode="decimal" autocomplete="off"';
+      ctl = "<input " + mode + ' id="' + id + '" data-path="' + f.path + '" data-type="' + f.type + '" value="' + esc(v) + '"' +
+        (f.ph ? ' placeholder="' + esc(f.ph) + '"' : "") + list + ">";
+      if (f.list) ctl += '<datalist id="dl-' + id + '">' + f.list.map(function (x) { return '<option value="' + esc(x) + '">'; }).join("") + "</datalist>";
+    }
+    return '<label class="' + cls + '" for="' + id + '"><span class="lbl">' + esc(t(f.label)) + "</span>" + ctl + "</label>";
+  }
+  function grid(fields) { return '<div class="grid2">' + fields.map(fieldHtml).join("") + "</div>"; }
+
+  var WIRINGS = ["1ph2w", "1ph3w", "3ph3w", "3ph4w"];
+  var CONDUITS = ["EMT", "IMC", "RMC", "PVC40", "PVC80"];
+  function wiringFields(p, opts) {
+    opts = opts || {};
+    var f = [];
+    if (opts.voltage !== false) {
+      f.push(F(p + ".voltage", "voltage", "num", { list: ["120", "208", "240", "277", "480", "600"] }));
+      f.push(F(p + ".wiring", "wiring", "sel", { opts: WIRINGS }));
+    }
+    f.push(F(p + ".mat", "material", "sel", { opts: ["cu", "al"] }),
+      F(p + ".ins", "insulation", "sel", { opts: ["THHN", "XHHW"] }),
+      F(p + ".term", "term_temp", "sel", { opts: ["60", "75", "90"], lab: function (c) { return c + " °C"; } }),
+      F(p + ".conduit", "conduit_type", "sel", { opts: CONDUITS }),
+      F(p + ".len", "length", "num"));
+    if (opts.pf !== false) f.push(F(p + ".pf", "pf", "num"));
+    f.push(F(p + ".vd", "vd_limit", "num"), F(p + ".amb", "ambient", "num"),
+      F(p + ".extra", "extra_ccc", "num"), F(p + ".sets", "sets", "num"),
+      F(p + ".max", "max_size", "sel", { opts: ["250", "350", "500", "600", "750"], lab: sizeLab }),
+      F(p + ".min", "min_size", "sel", { opts: ["14", "12", "10"], lab: sizeLab }),
+      F(p + ".nccc", "neutral_ccc", "chk"));
+    return f;
+  }
+  function moreBlock(fields, open, note) {
+    return '<details class="more"' + (open ? " open" : "") + "><summary>" + esc(t("more_settings")) + "</summary>" +
+      grid(fields) + (note ? '<p class="note">' + esc(note) + "</p>" : "") + "</details>";
+  }
+  function wiringInput(w, overrides) {
+    return N.wiringInput(Object.assign({
+      voltage: num(w.voltage, "voltage"), wiring: w.wiring, material: w.mat, insulation: w.ins,
+      term_temp: parseInt(w.term, 10), ambient_c: num(w.amb, "ambient"),
+      extra_ccc: Math.trunc(num(w.extra, "extra_ccc")), neutral_ccc: !!w.nccc,
+      sets: Math.trunc(num(w.sets, "sets")), max_size: w.max, length_ft: num(w.len, "length"),
+      pf: w.pf === undefined ? 0.9 : num(w.pf, "pf"), vd_limit_pct: num(w.vd, "vd_limit"),
+      conduit_type: w.conduit, min_size: w.min, edition: S.ed }, overrides || {}));
+  }
+
+  // ------------------------------------------------------------------ modules
+  var MODULES = [
+    { id: "br", nav: "nav_branch", title: "tab_branch",
+      icon: '<path d="M2 12h6M16 12h6M8 12l7-5"/><circle cx="8" cy="12" r="1.4"/><circle cx="16" cy="12" r="1.4"/>' },
+    { id: "mo", nav: "nav_motor", title: "tab_motor",
+      icon: '<circle cx="12" cy="12" r="8"/><path d="M8.5 15.5v-7l3.5 4.5 3.5-4.5v7"/>' },
+    { id: "xf", nav: "nav_xfmr", title: "tab_xfmr",
+      icon: '<circle cx="9" cy="12" r="5.5"/><circle cx="15" cy="12" r="5.5"/>' },
+    { id: "mv", nav: "nav_mv", title: "tab_mv", icon: '<path d="M13 2.5 5.5 13.5h5.5l-1 8 8-11.5h-5.5z"/>' },
+    { id: "tr", nav: "nav_tray", title: "tab_tray",
+      icon: '<path d="M3 8h18M3 16h18M6 8v8M10 8v8M14 8v8M18 8v8"/>' },
+    { id: "lc", nav: "nav_load", title: "tab_load", icon: '<path d="M5 20v-8M10 20V5M15 20v-6M20 20V9M3 20h18"/>' }
+  ];
+
+  function formBranch() {
+    var b = "br";
+    return '<div class="card">' + grid([
+      F(b + ".kind", "circuit_kind", "sel", { opts: ["branch", "feeder"] }),
+      F(b + ".type", "load_type", "sel", { opts: ["lighting", "receptacle", "heating", "equipment", "other"] }),
+      F(b + ".value", "load_input", "num"),
+      F(b + ".unit", "load_unit", "sel", { opts: ["VA", "kVA", "W", "kW", "A"], lab: String }),
+      F(b + ".pf", "pf", "num"), F(b + ".cont", "cont_pct", "num"),
+      F(b + ".ocpd", "ocpd_given", "num", { ph: t("opt_auto") }),
+      F(b + ".motor_va", "largest_motor_va", "num")
+    ]) + moreBlock(wiringFields("brw", { pf: false }), false) + "</div>";
+  }
+  function calcBranch() {
+    var b = S.br, w = wiringInput(S.brw, { pf: num(b.pf, "pf") });
+    var val = num(b.value, "load_input"), pf = w.pf, phases = N.WIRING[w.wiring][0], amps = null, va;
+    if (b.unit === "VA") va = val;
+    else if (b.unit === "kVA") va = val * 1000;
+    else if (b.unit === "W") va = val / pf;
+    else if (b.unit === "kW") va = val * 1000 / pf;
+    else { amps = val; va = val * w.voltage * (phases === 3 ? Math.sqrt(3) : 1); }
+    var cont = num(b.cont, "cont_pct") / 100, ocpd = num(b.ocpd, "ocpd_given", true);
+    return N.designGeneral(va, w, { continuous_va: va * cont, ocpd: ocpd === null ? null : Math.trunc(ocpd),
+      kind: b.kind, largest_motor_va: num(b.motor_va || "0", "largest_motor_va"), load_amps: amps });
+  }
+
+  function formMotor() {
+    var m = "mo";
+    return '<div class="card">' + grid([
+      F(m + ".hp", "hp", "sel", { opts: T.MOTOR_HP, lab: function (c) { return c + " HP"; } }),
+      F(m + ".device", "device", "sel", { opts: ["itcb", "td_fuse", "ntd_fuse", "inst_cb"] }),
+      F("mow.voltage", "voltage", "num", { list: ["115", "120", "208", "230", "240", "460", "480", "575", "600"] }),
+      F("mow.wiring", "wiring", "sel", { opts: ["1ph2w", "3ph3w"] }),
+      F(m + ".fla", "nameplate_fla", "num", { ph: "—" }), F(m + ".flc", "flc_override", "num", { ph: "—" }),
+      F(m + ".sf", "sf115", "chk"), F(m + ".eeb", "design_b_ee", "chk")
+    ]) + moreBlock(wiringFields("mow", { voltage: false }), false) + "</div>";
+  }
+  function calcMotor() {
+    var m = S.mo, w = wiringInput(S.mow);
+    return N.designMotor(m.hp, w, { device: m.device, nameplate_fla: num(m.fla, "nameplate_fla", true),
+      sf_115: !!m.sf, design_b_ee: !!m.eeb, flc_override: num(m.flc, "flc_override", true) });
+  }
+
+  function formXfmr() {
+    var x = "xf";
+    return '<div class="card">' + grid([
+      F(x + ".kva", "kva", "num", { list: T.XFMR_KVA_3PH.map(String) }),
+      F(x + ".phases", "phases", "sel", { opts: ["3", "1"], lab: function (c) { return c + "Ø"; } }),
+      F(x + ".pri_v", "pri_v", "num", { list: ["24900", "13800", "12470", "4160", "480", "208"] }),
+      F(x + ".sec_v", "sec_v", "num", { list: ["480", "240", "208", "120"] }),
+      F(x + ".z", "z_pct", "num"), F(x + ".loc", "location", "sel", { opts: ["any", "supervised"] }),
+      F(x + ".pri_dev", "pri_device", "sel", { opts: ["fuse", "cb"] }),
+      F(x + ".sec_dev", "sec_device", "sel", { opts: ["cb", "fuse"] }),
+      F(x + ".scheme", "lv_scheme", "sel", { opts: ["pri_sec", "pri_only"] }),
+      F(x + ".pri_len", "pri_length", "num")
+    ]) + '<p class="note">' + esc(t("mv_from_tab")) + "</p>" +
+      moreBlock(wiringFields("xfw", { voltage: false }), false) + "</div>";
+  }
+  function mvInputFromState() {
+    var m = S.mv;
+    return N.mvInput({ kv: num(m.kv, "kv"), amps: num(m.amps, "amps"), material: m.mat, insulation_level: m.ins,
+      fault_ka: num(m.fault, "fault_ka"), clear_time_s: num(m.time, "clear_time"), t_oper: num(m.t1, "t_oper"),
+      t_sc: num(m.t2, "t_sc"), ocpd_type: m.ocpd_type, ocpd_amps: num(m.ocpd || "0", "ocpd_amps"),
+      design_factor: num(m.df, "design_factor"), conduit_type: m.conduit, cable_od_in: num(m.od || "0", "cable_od"),
+      include_egc: !!m.egc, edition: S.ed });
+  }
+  function calcXfmr() {
+    var g = S.xf;
+    var x = N.transformerInput({ kva: num(g.kva, "kva"), pri_v: num(g.pri_v, "pri_v"), sec_v: num(g.sec_v, "sec_v"),
+      phases: parseInt(g.phases, 10), z_pct: num(g.z, "z_pct"), location: g.loc, pri_device: g.pri_dev,
+      sec_device: g.sec_dev, lv_scheme: g.scheme, edition: S.ed });
+    var sec = wiringInput(S.xfw, { voltage: x.sec_v });
+    if (x.phases === 1 && sec.wiring.charAt(0) === "3") sec.wiring = "1ph3w";
+    if (x.phases === 3 && sec.wiring.charAt(0) === "1") sec.wiring = "3ph4w";
+    var pri = null;
+    if (x.pri_v <= 1000) pri = wiringInput(S.xfw, { voltage: x.pri_v, wiring: x.phases === 3 ? "3ph3w" : "1ph2w",
+      length_ft: num(g.pri_len, "pri_length") });
+    return N.designTransformer(x, sec, pri, x.pri_v > 1000 ? mvInputFromState() : null);
+  }
+
+  function formMv() {
+    var m = "mv";
+    return '<div class="card">' + grid([
+      F(m + ".kv", "kv", "num", { list: ["24.9", "13.8", "12.47", "34.5"] }), F(m + ".amps", "amps", "num"),
+      F(m + ".mat", "material", "sel", { opts: ["cu", "al"] }),
+      F(m + ".ins", "ins_level", "sel", { opts: ["25kV_100", "25kV_133", "35kV_100"] }),
+      F(m + ".ocpd_type", "ocpd_type", "sel", { opts: ["fuse", "relay"] }), F(m + ".ocpd", "ocpd_amps", "num"),
+      F(m + ".fault", "fault_ka", "num"), F(m + ".time", "clear_time", "num")
+    ]) + moreBlock([F(m + ".df", "design_factor", "num"), F(m + ".conduit", "conduit_type", "sel", { opts: CONDUITS }),
+      F(m + ".t1", "t_oper", "num"), F(m + ".t2", "t_sc", "num"), F(m + ".od", "cable_od", "num"),
+      F(m + ".egc", "include_egc", "chk")], false) + "</div>";
+  }
+  function calcMv() { return N.designMvCable(mvInputFromState()); }
+
+  // ---- cable tray ----
+  function trSizes(kind) {
+    if (kind === "control") return ["14", "12", "10"];
+    return N.capacitySizes(kind);
+  }
+  function formTray() {
+    var x = "tr", h = '<div class="card">' + grid([
+      F(x + ".type", "tray_type", "sel", { opts: T.TRAY_TYPES }),
+      F(x + ".depth", "tray_depth", "sel", { opts: T.TRAY_DEPTHS.map(String), lab: function (c) { return c + " in"; }, numeric: true }),
+      F(x + ".width", "tray_width", "num", { list: ["0"].concat(T.TRAY_WIDTHS.map(String)) }),
+      F(x + ".arr", "tray_arrangement", "sel", { opts: D.tray_arrangements }),
+      F(x + ".ambient", "ambient", "num"), F(x + ".covered", "tray_covered", "chk")
+    ]) + "</div>";
+    h += '<div class="card"><div class="res-head"><p class="eyebrow" style="margin:0">' + esc(t("cables_in_tray")) +
+      '</p><button type="button" class="btn" data-act="tr-new">' + esc(t("add_cable")) + "</button></div>";
+    if (S.tr.example) h += '<p class="example">' + esc(t("example_note")) + "</p>";
+    h += '<div class="list">' + (UI.edit.tr === "new" ? cableEditor() : "");
+    if (!S.tr.cables.length && UI.edit.tr !== "new") h += '<div class="empty">' + esc(t("empty_tray")) + "</div>";
+    S.tr.cables.forEach(function (c, i) {
+      if (UI.edit.tr === i) { h += cableEditor(); return; }
+      var od;
+      try { od = N.cableOd(c).toFixed(2) + (N.odIsTypical(c) ? "*" : ""); } catch (e) { od = "?"; }
+      h += '<div class="item"><div class="nm">' + esc(c.name) + '</div><div class="act">' +
+        '<button type="button" class="btn" data-act="tr-edit" data-i="' + i + '">' + esc(t("edit")) + "</button>" +
+        '<button type="button" class="btn danger" data-act="tr-del" data-i="' + i + '" aria-label="' + esc(t("delete")) + '">×</button></div>' +
+        '<div class="meta"><span class="tag">' + esc(o(c.kind)) + "</span>" + esc(c.qty + " × " + N.sizeLabel(c.size) +
+        (c.kind === "lv_multi" || c.kind === "control" ? " · " + c.n_cond + "C" : "") + " · OD " + od + " in") + "</div></div>";
+    });
+    h += '</div><div class="btn-row"><button type="button" class="btn ghost" data-act="tr-example">' + esc(t("load_example")) +
+      '</button><button type="button" class="btn ghost danger" data-act="tr-clear">' +
+      esc(UI.clearArm.tr ? t("confirm_clear") : t("clear")) + "</button></div></div>";
+    h += '<div class="card"><p class="eyebrow">' + esc(t("capacity_table")) + "</p>" + grid([
+      F(x + ".cap_kind", "cable_kind", "sel", { opts: D.tray_kinds }),
+      F(x + ".cap_n", "n_cond", "sel", { opts: ["3", "4"], lab: String }),
+      F(x + ".cap_mat", "material", "sel", { opts: ["cu", "al"] }),
+      F(x + ".cap_ins", "ins_level", "sel", { opts: ["25kV_100", "25kV_133", "35kV_100"] })
+    ]) + '<div class="btn-row"><button type="button" class="btn" data-act="tr-cap" aria-expanded="' + (S.tr.show_cap ? "true" : "false") + '">' +
+      esc(t("capacity_table")) + "</button></div></div>";
+    return h;
+  }
+  function cableEditor() {
+    var d = "@draft.tr", k = UI.draft.tr.kind;
+    return '<div class="item editing">' + grid([
+      F(d + ".name", "col_name", "text", { wide: true }),
+      F(d + ".kind", "cable_kind", "sel", { opts: D.tray_kinds, wide: true }),
+      F(d + ".size", "cable_size", "sel", { opts: trSizes(k), lab: sizeLab }),
+      F(d + ".n_cond", "n_cond", "sel", { opts: ["1", "2", "3", "4"], lab: String, numeric: true }),
+      F(d + ".qty", "cable_qty", "num"), F(d + ".od_in", "cable_od_in", "num"),
+      F(d + ".material", "material", "sel", { opts: ["cu", "al"] }),
+      F(d + ".ins_level", "ins_level", "sel", { opts: ["25kV_100", "25kV_133", "35kV_100"] })
+    ]) + '<div class="btn-row"><button type="button" class="btn primary" data-act="tr-save">' + esc(t("save_item")) +
+      '</button><button type="button" class="btn" data-act="tr-cancel">' + esc(t("cancel")) + "</button></div></div>";
+  }
+  function trayInputFromState() {
+    var g = S.tr;
+    return N.trayInput({ tray_type: g.type, depth_in: num(g.depth, "tray_depth"), width_in: num(g.width || "0", "tray_width"),
+      covered: !!g.covered, arrangement: g.arr, ambient_c: num(g.ambient, "ambient"),
+      cables: g.cables.map(function (c) { return N.trayCable(c); }), edition: S.ed });
+  }
+  function calcTray() { return N.designTray(trayInputFromState()); }
+
+  // ---- panel load calculation ----
+  function formLoad() {
+    var p = "lc", h = '<div class="card">' + grid([
+      F(p + ".name", "panel_name", "text"),
+      F(p + ".system", "panel_system", "sel", { opts: D.system_order, lab: String }),
+      F(p + ".div", "diversity", "num"), F(p + ".tpf", "target_pf", "num")
+    ]) + moreBlock(wiringFields("lcw", { voltage: false, pf: false }), false) + "</div>";
+    var calc = null;
+    try { calc = N.calculateLoads(panelFromState()); } catch (e) { calc = null; }
+    h += '<div class="card"><div class="res-head"><p class="eyebrow" style="margin:0">' + esc(t("loads_in_panel")) +
+      '</p><button type="button" class="btn" data-act="lc-new">' + esc(t("add_load")) + "</button></div>";
+    if (S.lc.example) h += '<p class="example">' + esc(t("example_note")) + "</p>";
+    h += '<div class="list">' + (UI.edit.lc === "new" ? loadEditor() : "");
+    if (!S.lc.loads.length && UI.edit.lc !== "new") h += '<div class="empty">' + esc(t("empty_load")) + "</div>";
+    S.lc.loads.forEach(function (ld, i) {
+      if (UI.edit.lc === i) { h += loadEditor(); return; }
+      var r = calc ? calc.rows[i] : null;
+      var meta = ld.qty + " × " + ld.rating + " " + ld.unit + " · PF " + Number(ld.pf).toFixed(2) + " · " + ld.voltage + " V " +
+        ld.phases + "Ø" + (r ? " · " + t("col_dkva") + " " + r.d_kva.toFixed(2) + " · DF " + r.df.toFixed(3) +
+        " · " + t("col_conn") + " " + (r.phase || "-") : "");
+      h += '<div class="item"><div class="nm">' + esc(ld.name) + '</div><div class="act">' +
+        '<button type="button" class="btn" data-act="lc-edit" data-i="' + i + '">' + esc(t("edit")) + "</button>" +
+        '<button type="button" class="btn danger" data-act="lc-del" data-i="' + i + '" aria-label="' + esc(t("delete")) + '">×</button></div>' +
+        '<div class="meta"><span class="tag">' + esc(o(ld.category)) + "</span>" +
+        (ld.continuous ? '<span class="tag">' + esc(t("lc_cont")) + "</span>" : "") + esc(meta) + "</div></div>";
+    });
+    h += '</div><div class="btn-row"><button type="button" class="btn ghost" data-act="lc-example">' + esc(t("load_example")) +
+      '</button><button type="button" class="btn ghost danger" data-act="lc-clear">' +
+      esc(UI.clearArm.lc ? t("confirm_clear") : t("clear")) + "</button></div></div>";
+    return h;
+  }
+  function loadEditor() {
+    var d = "@draft.lc";
+    return '<div class="item editing">' + grid([
+      F(d + ".name", "col_name", "text", { wide: true }),
+      F(d + ".category", "col_cat", "sel", { opts: D.categories }),
+      F(d + ".unit", "col_unit", "sel", { opts: D.units, lab: String }),
+      F(d + ".qty", "col_qty", "num"), F(d + ".rating", "col_rating", "num"),
+      F(d + ".pf", "pf", "num"), F(d + ".voltage", "col_v", "num", { list: ["120", "208", "240", "277", "480"] }),
+      F(d + ".phases", "phases", "sel", { opts: ["1", "3"], lab: function (c) { return c + "Ø"; }, numeric: true }),
+      F(d + ".phase_conn", "phase_conn", "sel", { opts: D.phase_conn, lab: function (c) { return c === "auto" ? o(c) : c; } }),
+      F(d + ".demand_factor", "df_auto", "num", { ph: t("opt_auto") }),
+      F(d + ".continuous", "continuous", "chk")
+    ]) + '<div class="btn-row"><button type="button" class="btn primary" data-act="lc-save">' + esc(t("save_item")) +
+      '</button><button type="button" class="btn" data-act="lc-cancel">' + esc(t("cancel")) + "</button></div></div>";
+  }
+  function panelFromState() {
+    var g = S.lc;
+    return N.panelInput({ name: g.name, system: g.system, diversity: num(g.div, "diversity"),
+      target_pf: num(g.tpf, "target_pf"), loads: g.loads.map(function (l) { return N.loadItem(l); }), edition: S.ed });
+  }
+  function calcLoad() {
+    var p = panelFromState(), c = N.calculateLoads(p), feeder = null, ferr = null;
+    try { feeder = N.sizeFeeder(p, c, wiringInput(S.lcw, { pf: 0.9 })); } catch (e) { if (e instanceof N.CalcError) ferr = e; else throw e; }
+    return { panel: p, calc: c, feeder: feeder, ferr: ferr };
+  }
+
+  var FORMS = { br: formBranch, mo: formMotor, xf: formXfmr, mv: formMv, tr: formTray, lc: formLoad };
+  var CALCS = { br: calcBranch, mo: calcMotor, xf: calcXfmr, mv: calcMv, tr: calcTray, lc: calcLoad };
+
+  // ------------------------------------------------------------------ results
+  var KEY_FIELDS = {
+    general: [["ocpd", "s_ocpd", "{v} A"], ["switch", "s_switch", "{v} A"], ["conduit", "s_conduit", "{v}"]],
+    feeder: [["ocpd", "s_ocpd", "{v} A"], ["switch", "s_switch", "{v} A"], ["conduit", "s_conduit", "{v}"]],
+    primary: [["ocpd", "s_ocpd", "{v} A"], ["conduit", "s_conduit", "{v}"]],
+    secondary: [["ocpd", "s_ocpd", "{v} A"], ["conduit", "s_conduit", "{v}"]],
+    motor: [["ocpd", "s_ocpd_motor", "{v:.0f} A"], ["overload", "s_overload", "{v:.1f} A"], ["switch", "s_switch", "{v} A"]],
+    transformer: [["pri_ocpd", "s_pri_ocpd", "{v} A"], ["sec_ocpd", "s_sec_ocpd", "{v} A"], ["isc_ka", "s_isc", "{v:.1f} kA"]],
+    mv_cable: [["ampacity", "s_ampacity", "{v} A"], ["egc", "s_egc", "{v}"], ["conduit", "s_conduit", "{v}"]],
+    tray: [["tray_text", "s_tray", "{v}"], ["req_width", "s_req_width", "{v:.2f} in"]]
+  };
+  function meter(label, value, limit, unit) {
+    if (value === null || value === undefined || !limit) return "";
+    var ratio = value / limit, state = ratio > 1 + 1e-9 ? "ng" : ratio > 0.85 ? "warn" : "";
+    var scale = 1.25;
+    return '<div class="meter"><div class="mrow"><span>' + esc(label) + "</span><b>" + esc(value.toFixed(2) + " / " + limit + " " + unit) +
+      '</b></div><div class="track ' + state + '"><i style="width:' + Math.min(ratio / scale, 1) * 100 + '%"></i><s style="left:' +
+      (100 / scale) + '%"></s></div></div>';
+  }
+  function resultBody(res, key) {
+    var s = res.summary, h = "";
+    if (s.wire_text) h += '<div class="callout"><p class="eyebrow" style="margin:0 0 2px">' + esc(t(res.kind === "mv_cable" ? "s_mv_cable" : "s_wire")) +
+      '</p><div class="wire">' + esc(s.wire_text) + "</div></div>";
+    var keys = (KEY_FIELDS[res.kind] || []).filter(function (k) { return s[k[0]] !== null && s[k[0]] !== undefined && s[k[0]] !== "-"; });
+    if (keys.length) h += '<div class="keys">' + keys.map(function (k) {
+      var val = N.pyFormat(k[2], { v: s[k[0]] });
+      return '<div class="key"><div class="k">' + esc(t(k[1])) + '</div><div class="v' + (val.length > 8 ? " txt" : "") + '">' + esc(val) + "</div></div>";
+    }).join("") + "</div>";
+    var shown = {}; keys.forEach(function (k) { shown[k[0]] = 1; }); shown.wire_text = 1;
+    var rows = N.summaryRows(res, S.lang).filter(function (r) { return !shown[r[2]]; });
+    if (rows.length) h += '<dl class="kv">' + rows.map(function (r) { return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>";
+    var m = "";
+    if (s.vd_pct !== undefined && s.vd_limit) m += meter(t("vd_meter"), s.vd_pct, s.vd_limit, "%");
+    if (s.fill_pct !== undefined && s.fill_pct !== null) m += meter(t("fill_meter"), s.fill_pct, s.max_fill, "%");
+    if (res.kind === "tray") m += meter(t("tray_meter"), s.fill_pct, 100, "%");
+    if (m) h += '<div class="meters">' + m + "</div>";
+    var steps = N.stepRows(res, S.lang), anyNg = steps.some(function (x) { return x.ok === false; });
+    var open = anyNg || UI.stepsOpen[key];
+    h += '<details class="steps" data-steps="' + key + '"' + (open ? " open" : "") + "><summary>" + esc(t("steps")) + " (" + steps.length + ")</summary><ol class=\"steplist\">" +
+      steps.map(function (x) {
+        var chips = (x.ok === true ? '<span class="chip ok">' + esc(t("ok")) + "</span>" : x.ok === false ? '<span class="chip ng">' + esc(t("ng")) + "</span>" : "") +
+          (x.ref ? '<span class="chip">' + esc(x.ref) + "</span>" : "");
+        return '<li><span class="tx">' + esc(x.text) + "</span>" + (chips ? '<span class="rf">' + chips + "</span>" : "") + "</li>";
+      }).join("") + "</ol></details>";
+    var warns = N.warningRows(res, S.lang);
+    if (warns.length) h += '<div class="warns">' + warns.map(function (w) { return "<p>" + esc(w) + "</p>"; }).join("") + "</div>";
+    return h;
+  }
+  var CHILD_TITLE = { primary: "grp_primary", secondary: "grp_secondary" };
+  function resultCard(id, res) {
+    var h = '<section class="card"><div class="res-head"><h3>' + esc(t("results")) + '</h3><span class="toast" id="toast-' + id +
+      '" aria-live="polite"></span><button type="button" class="btn" data-act="copy">' + esc(t("copy_results")) + "</button></div>" +
+      resultBody(res, id);
+    Object.keys(res.children).forEach(function (k) {
+      h += '<div class="sub"><h4>' + esc(t(CHILD_TITLE[k] || k)) + "</h4>" + resultBody(res.children[k], id + "-" + k) + "</div>";
+    });
+    return h + "</section>";
+  }
+  function loadResultCard(out) {
+    var c = out.calc, h = '<section class="card"><div class="res-head"><h3>' + esc(out.panel.name + " · " + out.panel.system) +
+      '</h3><span class="toast" id="toast-lc" aria-live="polite"></span><button type="button" class="btn" data-act="copy">' + esc(t("copy_results")) + "</button></div>";
+    h += '<div class="keys">' +
+      '<div class="key"><div class="k">' + esc(t("lc_design")) + '</div><div class="v">' + esc(c.design_kva.toFixed(1) + " kVA") + "</div></div>" +
+      '<div class="key"><div class="k">' + esc(t("s_i_design")) + '</div><div class="v">' + esc(c.i_design.toFixed(1) + " A") + "</div></div>" +
+      '<div class="key"><div class="k">PF</div><div class="v">' + esc(c.demand.pf.toFixed(3)) + "</div></div></div>";
+    h += '<dl class="kv stack">' + N.loadSummaryRows(c, S.lang).map(function (r) { return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>";
+    var amps = c.phase_amps, mx = Math.max.apply(null, Object.keys(amps).map(function (p) { return amps[p]; }).concat([1e-9]));
+    h += '<div class="phasebars" aria-label="' + esc(t("lc_phase")) + '">' + Object.keys(amps).map(function (p) {
+      return '<div class="pb"><b>' + p + '</b><div class="bar"><i style="width:' + (amps[p] / mx * 100) + '%"></i></div><span>' +
+        amps[p].toFixed(1) + " A</span></div>";
+    }).join("") + "</div>";
+    var notes = N.loadNotes(c, S.lang);
+    if (notes.length) h += '<div class="warns">' + notes.map(function (n) { return '<p style="background:var(--surface-2);border-left-color:var(--accent)">' + esc(n) + "</p>"; }).join("") + "</div>";
+    h += '<div class="sub"><h4>' + esc(t("size_feeder")) + "</h4>";
+    if (out.feeder) h += resultBody(out.feeder, "lc-feeder");
+    else if (out.ferr) h += '<div class="err">' + esc(t("error") + ": " + N.tr(out.ferr.key, S.lang, out.ferr.params)) + "</div>";
+    return h + "</div></section>";
+  }
+  function capacityCard() {
+    var g = S.tr, kind = g.cap_kind, tbl;
+    try {
+      tbl = N.capacityTable(kind, kind === "control" ? ["-"] : null, null, { tray_type: g.type, depth_in: Number(g.depth) || 4,
+        n_cond: parseInt(g.cap_n, 10), material: g.cap_mat, ins_level: g.cap_ins });
+    } catch (e) { return ""; }
+    var h = '<section class="card"><h3 style="margin:0;font:600 20px/1.1 var(--f-display)">' + esc(t("capacity_table")) + "</h3>" +
+      '<p class="mod-sub">' + esc(t("cap_title", { kind: kind, tray: g.type })) + '</p><div class="tbl-wrap"><table class="cap"><thead><tr><th>' +
+      esc(t("col_size")) + "</th>" + T.TRAY_WIDTHS.map(function (w) { return "<th>" + w + '"</th>'; }).join("") + "</tr></thead><tbody>" +
+      tbl.map(function (row) {
+        return "<tr><td>" + esc(row[0] === "-" ? o(kind) : N.sizeLabel(row[0])) + "</td>" +
+          row[1].map(function (c) { return "<td>" + (c[1] ? c[1] : "–") + "</td>"; }).join("") + "</tr>";
+      }).join("") + '</tbody></table></div><p class="note">' + esc(t("w_tray_od_typical")) + "</p></section>";
+    return h;
+  }
+
+  var lastText = {};
+  function plainText(id, res) {
+    var lines = [];
+    function block(r) {
+      if (r.summary.wire_text) lines.push(r.summary.wire_text);
+      N.summaryRows(r, S.lang).forEach(function (x) { if (x[2] !== "wire_text") lines.push(x[0] + ": " + x[1]); });
+      N.stepRows(r, S.lang).forEach(function (x, i) {
+        lines.push((i + 1) + ". " + x.text + (x.ok === true ? " [" + t("ok") + "]" : x.ok === false ? " [" + t("ng") + "]" : "") + (x.ref ? " (" + x.ref + ")" : ""));
+      });
+      N.warningRows(r, S.lang).forEach(function (w) { lines.push("! " + w); });
+    }
+    block(res);
+    Object.keys(res.children).forEach(function (k) { lines.push("", t(CHILD_TITLE[k] || k)); block(res.children[k]); });
+    return lines.join("\n");
+  }
+
+  function renderResults() {
+    var id = S.tab, box = document.getElementById("results");
+    if (!box) return;
+    var h = "";
+    try {
+      var r = CALCS[id]();
+      if (id === "lc") {
+        h = loadResultCard(r);
+        var txt = [r.panel.name + " (" + r.panel.system + ")"].concat(N.loadSummaryRows(r.calc, S.lang).map(function (x) { return x[0] + ": " + x[1]; }))
+          .concat(N.loadNotes(r.calc, S.lang));
+        if (r.feeder) txt = txt.concat(["", t("size_feeder"), plainText("lc", r.feeder)]);
+        lastText[id] = txt.join("\n");
+      } else {
+        h = resultCard(id, r);
+        lastText[id] = plainText(id, r);
+      }
+      if (id === "tr" && S.tr.show_cap) h += capacityCard();
+    } catch (e) {
+      if (!(e instanceof N.CalcError)) { console.error(e); h = '<div class="err">' + esc(t("error") + ": " + e.message) + "</div>"; }
+      else h = '<section class="card"><div class="err">' + esc(t("error") + ": " + N.tr(e.key, S.lang, e.params)) + "</div></section>";
+      if (id === "tr" && S.tr.show_cap) h += capacityCard();
+      lastText[id] = "";
+    }
+    box.innerHTML = h + '<p class="disc">' + esc(t("disclaimer")) + "</p>";
+  }
+
+  // ------------------------------------------------------------------ render
+  function render() {
+    document.documentElement.lang = S.lang === "zh" ? "zh-Hant" : "en";
+    document.getElementById("subtitle").textContent = t("web_subtitle");
+    document.querySelectorAll("[data-lang]").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.lang === S.lang ? "true" : "false"); });
+    document.querySelectorAll("[data-ed]").forEach(function (b) { b.setAttribute("aria-pressed", b.dataset.ed === S.ed ? "true" : "false"); });
+    document.getElementById("tabbar").innerHTML = MODULES.map(function (m) {
+      return '<button type="button" data-tab="' + m.id + '"' + (m.id === S.tab ? ' aria-current="page"' : "") +
+        '><svg viewBox="0 0 24 24" aria-hidden="true">' + m.icon + "</svg><span>" + esc(t(m.nav)) + "</span></button>";
+    }).join("");
+    var mod = MODULES.filter(function (m) { return m.id === S.tab; })[0] || MODULES[0];
+    var app = document.getElementById("app");
+    app.innerHTML = '<div class="module"><div class="inputs"><div><p class="lead">' + esc(t("web_subtitle")) + '</p><h2 class="mod-title">' + esc(t(mod.title)) +
+      '</h2><p class="mod-sub">' + esc(t("auto_calc_note")) + "</p></div>" + FORMS[mod.id]() +
+      '</div><div class="results" id="results" aria-live="polite"></div></div>';
+    renderResults();
+  }
+  function rerenderForm() {
+    var y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+  }
+
+  var timer = null;
+  function schedule() { clearTimeout(timer); timer = setTimeout(renderResults, 140); }
+
+  // ------------------------------------------------------------------ events
+  document.querySelector(".top").addEventListener("click", function (e) {
+    var b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.lang) { S.lang = b.dataset.lang; save(); rerenderForm(); }
+    if (b.dataset.ed) { S.ed = b.dataset.ed; save(); render(); }
+  });
+  document.getElementById("tabbar").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-tab]");
+    if (!b) return;
+    S.tab = b.dataset.tab; save(); render(); window.scrollTo(0, 0);
+  });
+  function onField(e) {
+    var el = e.target, path = el.dataset && el.dataset.path;
+    if (!path) return;
+    var type = el.dataset.type, v;
+    if (type === "chk") v = el.checked;
+    else if (type === "selnum") v = Number(el.value);
+    else v = el.value;
+    setPath(path, v);
+    if (path.indexOf("@draft") === 0) {
+      if (path === "@draft.tr.kind") {
+        var sizes = trSizes(v);
+        if (sizes.indexOf(UI.draft.tr.size) < 0) UI.draft.tr.size = sizes[Math.floor(sizes.length / 2)];
+        UI.draft.tr.n_cond = (v === "lv_single" || v === "mv_single") ? 1 : 3;
+        rerenderForm();
+      }
+      return;
+    }
+    if (path === "br.type") {
+      var CONT = { lighting: 100, heating: 100, receptacle: 0, equipment: 0, other: 0 };
+      S.br.cont = String(CONT[v] || 0);
+      var c = document.getElementById("f-br-cont");
+      if (c) c.value = S.br.cont;
+    }
+    save();
+    if (path.indexOf("lc.") === 0 && S.tab === "lc" && e.type === "change" && /^lc\.(system|div|tpf)$/.test(path)) { rerenderForm(); return; }
+    schedule();
+  }
+  var app = document.getElementById("app");
+  app.addEventListener("input", onField);
+  app.addEventListener("change", function (e) { if (e.target.tagName === "SELECT" || e.target.type === "checkbox") onField(e); });
+  app.addEventListener("toggle", function (e) {
+    var d = e.target;
+    if (d.dataset && d.dataset.steps) UI.stepsOpen[d.dataset.steps] = d.open;
+  }, true);
+  app.addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-act]");
+    if (!b) return;
+    var act = b.dataset.act, i = b.dataset.i !== undefined ? parseInt(b.dataset.i, 10) : null;
+    var listKey = act.slice(0, 2), kind = act.slice(3);
+    if (act !== "lc-clear") UI.clearArm.lc = false;
+    if (act !== "tr-clear") UI.clearArm.tr = false;
+    if (act === "copy") { copyResults(); return; }
+    if (act === "tr-cap") { S.tr.show_cap = !S.tr.show_cap; save(); rerenderForm(); return; }
+    var listName = listKey === "lc" ? "loads" : "cables";
+    var maker = listKey === "lc" ? N.loadItem : N.trayCable;
+    if (kind === "new") { UI.edit[listKey] = "new"; UI.draft[listKey] = draftOf(listKey, maker({ name: listKey === "lc" ? "Load" : "Cable" })); }
+    else if (kind === "edit") { UI.edit[listKey] = i; UI.draft[listKey] = draftOf(listKey, S[listKey][listName][i]); }
+    else if (kind === "cancel") { UI.edit[listKey] = null; UI.draft[listKey] = null; }
+    else if (kind === "del") { S[listKey][listName].splice(i, 1); S[listKey].example = false; UI.edit[listKey] = null; }
+    else if (kind === "save") {
+      var item;
+      try { item = fromDraft(listKey, UI.draft[listKey]); }
+      catch (err) {
+        if (err instanceof N.CalcError) { alertInline(b, N.tr(err.key, S.lang, err.params)); return; }
+        throw err;
+      }
+      if (UI.edit[listKey] === "new") S[listKey][listName].push(item); else S[listKey][listName][UI.edit[listKey]] = item;
+      S[listKey].example = false; UI.edit[listKey] = null; UI.draft[listKey] = null;
+    } else if (kind === "example") {
+      S[listKey][listName] = (listKey === "lc" ? EXAMPLE_LOADS : EXAMPLE_CABLES).map(function (x) { return maker(x); });
+      S[listKey].example = true; UI.edit[listKey] = null;
+    } else if (kind === "clear") {
+      if (!UI.clearArm[listKey]) { UI.clearArm[listKey] = true; rerenderForm(); return; }
+      UI.clearArm[listKey] = false; S[listKey][listName] = []; S[listKey].example = false; UI.edit[listKey] = null;
+    }
+    save(); rerenderForm();
+  });
+  function draftOf(listKey, item) {
+    var d = Object.assign({}, item);
+    if (listKey === "lc") {
+      d.qty = String(d.qty); d.rating = String(d.rating); d.pf = String(d.pf); d.voltage = String(d.voltage);
+      d.demand_factor = d.demand_factor === null || d.demand_factor === undefined ? "" : String(d.demand_factor);
+    } else { d.qty = String(d.qty); d.od_in = String(d.od_in || 0); }
+    return d;
+  }
+  function fromDraft(listKey, d) {
+    if (listKey === "lc") return N.loadItem({ name: d.name || "Load", category: d.category, qty: Math.max(Math.trunc(num(d.qty, "col_qty")), 0),
+      rating: num(d.rating, "col_rating"), unit: d.unit, pf: num(d.pf, "pf"), voltage: num(d.voltage, "col_v"),
+      phases: Number(d.phases), continuous: !!d.continuous, demand_factor: num(d.demand_factor, "df_auto", true),
+      phase_conn: d.phase_conn || "auto" });
+    var c = N.trayCable({ name: d.name || "Cable", kind: d.kind, size: d.size, n_cond: Number(d.n_cond),
+      qty: Math.max(Math.trunc(num(d.qty, "cable_qty")), 0), od_in: num(d.od_in || "0", "cable_od_in"),
+      material: d.material, ins_level: d.ins_level });
+    N.cableOd(c);
+    return c;
+  }
+  function alertInline(btn, msg) {
+    var p = btn.parentNode.querySelector(".err");
+    if (!p) { p = document.createElement("div"); p.className = "err"; p.style.flexBasis = "100%"; btn.parentNode.appendChild(p); }
+    p.textContent = t("error") + ": " + msg;
+  }
+  function copyResults() {
+    var text = lastText[S.tab] || "", toast = document.getElementById("toast-" + S.tab);
+    function fallback() {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.setAttribute("readonly", ""); ta.style.cssText = "width:100%;min-height:160px;margin-top:8px;font:13px/1.4 var(--f-mono)";
+      var card = document.querySelector("#results .card");
+      if (card && !card.querySelector("textarea")) card.appendChild(ta);
+      ta.focus(); ta.select();
+      if (toast) toast.textContent = t("copy_failed");
+    }
+    try {
+      navigator.clipboard.writeText(text).then(function () { if (toast) toast.textContent = t("copied"); }, fallback);
+    } catch (e) { fallback(); }
+  }
+
+  render();
+})();
+</script>

@@ -157,6 +157,12 @@ class TransformerTests(unittest.TestCase):
         mv = r.children["primary"].summary
         self.assertEqual(mv["size"], "1")           # 28 kV class min 1 AWG
 
+    def test_lv_transformer_beyond_6000a(self):
+        x = E.TransformerInput(kva=5000, pri_v=480, sec_v=208, z_pct=5.75)
+        with self.assertRaises(E.CalcError) as cm:
+            E.design_transformer(x, sec_wiring=E.WiringInput())
+        self.assertEqual(cm.exception.key, "err_ocpd_range")
+
     def test_short_circuit_cmil(self):
         a = E.sc_min_cmil(10, 0.5, "cu", 90, 250)
         self.assertAlmostEqual(a, 98_280, delta=50)
