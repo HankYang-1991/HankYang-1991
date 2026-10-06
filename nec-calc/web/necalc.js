@@ -22,7 +22,35 @@
   CalcError.prototype = Object.create(Error.prototype);
 
   function has(o, k) { return o != null && Object.prototype.hasOwnProperty.call(o, k); }
-  function sum(arr) { var s = 0; for (var i = 0; i < arr.length; i++) s += arr[i]; return s; }
+  // exact float summation, same algorithm as Python's math.fsum (Shewchuk)
+  // so totals match the Python engine on every Python version
+  function sum(arr) {
+    var partials = [], i, j, x, y, t, hi, lo = 0, n;
+    for (var k = 0; k < arr.length; k++) {
+      x = arr[k]; i = 0;
+      for (j = 0; j < partials.length; j++) {
+        y = partials[j];
+        if (Math.abs(x) < Math.abs(y)) { t = x; x = y; y = t; }
+        hi = x + y; lo = y - (hi - x);
+        if (lo) partials[i++] = lo;
+        x = hi;
+      }
+      partials.length = i; partials.push(x);
+    }
+    n = partials.length; hi = 0;
+    if (n > 0) {
+      hi = partials[--n];
+      while (n > 0) {
+        x = hi; y = partials[--n]; hi = x + y; lo = y - (hi - x);
+        if (lo) break;
+      }
+      if (n > 0 && ((lo < 0 && partials[n - 1] < 0) || (lo > 0 && partials[n - 1] > 0))) {
+        y = lo * 2; x = hi + y;
+        if (y === x - hi) hi = x;
+      }
+    }
+    return hi;
+  }
   function pyRound(x, nd) {  // Python round() - ties to even
     var m = Math.pow(10, nd || 0), y = x * m, r = Math.round(y);
     if (Math.abs(y % 1) === 0.5 && r % 2 !== 0) r -= 1;

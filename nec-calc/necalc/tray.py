@@ -139,7 +139,7 @@ def _lv_multi_width(cables, x, res):
     power = [c for c in cables if c.kind == "lv_multi"]
     control = [c for c in cables if c.kind == "control"]
     if not power and control:
-        area = sum(c.qty * c.area() for c in control)
+        area = math.fsum(c.qty * c.area() for c in control)
         pct = T.TRAY_CONTROL_PCT[x.tray_type]
         depth = min(x.depth_in, 6.0)
         w = area / (pct * depth)
@@ -149,8 +149,8 @@ def _lv_multi_width(cables, x, res):
 
     large = [c for c in power if cmil_of(c.size) >= CMIL_4_0]
     small = [c for c in power if cmil_of(c.size) < CMIL_4_0] + control
-    sd = sum(c.qty * c.od() for c in large)
-    a_s = sum(c.qty * c.area() for c in small)
+    sd = math.fsum(c.qty * c.od() for c in large)
+    a_s = math.fsum(c.qty * c.area() for c in small)
     if solid:
         col, k, col_name = T.TRAY_A_COL3, T.TRAY_A_COL4_K, "3/4"
     else:
@@ -181,12 +181,12 @@ def _lv_single_width(cables, x, res):
     if small:
         res.warn("w_tray_single_min",
                  sizes=", ".join(sorted({c.size for c in small})))
-    s1000 = sum(c.qty * c.od() for c in cables
+    s1000 = math.fsum(c.qty * c.od() for c in cables
                 if cmil_of(c.size) >= 1_000_000)
-    a250 = sum(c.qty * c.area() for c in cables
+    a250 = math.fsum(c.qty * c.area() for c in cables
                if 250_000 <= cmil_of(c.size) < 1_000_000)
     any_small = any(cmil_of(c.size) <= CMIL_4_0 for c in cables)
-    sd_all = sum(c.qty * c.od() for c in cables)
+    sd_all = math.fsum(c.qty * c.od() for c in cables)
     w = 0.0
     if any_small:
         w = max(w, sd_all)
@@ -209,7 +209,7 @@ def _lv_single_width(cables, x, res):
 
 def _mv_width(cables, x, res):
     """392.22(C) - cables over 2000 V: sum of diameters <= width, 1 layer."""
-    sd = sum(c.qty * c.od() for c in cables)
+    sd = math.fsum(c.qty * c.od() for c in cables)
     res.add("st_tray_mv", ref("tray_fill_mv", x.edition), sd=sd)
     return sd, {"rule": "mv", "sd": sd}
 
@@ -281,7 +281,7 @@ def required_width(x: TrayInput, res=None):
         sections["lv_single"] = _lv_single_width(lv_single, x, res)
     if mv:
         sections["mv"] = _mv_width(mv, x, res)
-    total = sum(w for w, _ in sections.values())
+    total = math.fsum(w for w, _ in sections.values())
     return total, sections, res
 
 

@@ -188,7 +188,7 @@ def wire_area(size, insulation):
 def select_conduit(items, conduit_type, max_trade=None):
     """items: list of (count, area_in2). Returns dict or None."""
     n = sum(c for c, _ in items)
-    total = sum(c * a for c, a in items)
+    total = math.fsum(c * a for c, a in items)
     pct = T.FILL_PERCENT.get(n, T.FILL_PERCENT_OVER_2)
     for trade in T.TRADE_SIZES:
         area = T.CONDUIT_AREA[conduit_type].get(trade)

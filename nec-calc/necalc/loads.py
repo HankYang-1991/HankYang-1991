@@ -152,7 +152,7 @@ def calculate(panel: Panel):
 
     notes = []
     # ---- automatic demand factors ----------------------------------
-    rec_kva = sum(r["kva"] for r in rows if r["load"].category == "receptacle"
+    rec_kva = math.fsum(r["kva"] for r in rows if r["load"].category == "receptacle"
                   and r["load"].demand_factor is None)
     rec_df = 1.0
     if rec_kva > 10.0:
@@ -160,8 +160,8 @@ def calculate(panel: Panel):
         notes.append(("n_receptacle", ref("receptacle_load", ed),
                       {"kva": rec_kva, "df": rec_df}))
 
-    heat = sum(r["kva"] for r in rows if r["load"].category == "heating")
-    cool = sum(r["kva"] for r in rows if r["load"].category == "cooling")
+    heat = math.fsum(r["kva"] for r in rows if r["load"].category == "heating")
+    cool = math.fsum(r["kva"] for r in rows if r["load"].category == "cooling")
     drop_cat = None
     if heat > 0 and cool > 0:
         drop_cat = "cooling" if heat >= cool else "heating"
@@ -226,12 +226,12 @@ def calculate(panel: Panel):
         r["phase"] = ",".join(sorted(used_ph))
 
     # ---- totals -----------------------------------------------------
-    conn_kw = sum(r["kw"] for r in rows)
-    conn_kvar = sum(r["kvar"] for r in rows)
+    conn_kw = math.fsum(r["kw"] for r in rows)
+    conn_kvar = math.fsum(r["kvar"] for r in rows)
     conn_kva = math.hypot(conn_kw, conn_kvar)
-    dem_kw = sum(r["d_kw"] for r in rows)
-    dem_kvar = sum(r["d_kvar"] for r in rows)
-    dem_kva_arith = sum(r["d_kva"] for r in rows)
+    dem_kw = math.fsum(r["d_kw"] for r in rows)
+    dem_kvar = math.fsum(r["d_kvar"] for r in rows)
+    dem_kva_arith = math.fsum(r["d_kva"] for r in rows)
     div = max(panel.diversity, 1.0)
     coin_kw = dem_kw / div
     coin_kvar = dem_kvar / div
@@ -239,7 +239,7 @@ def calculate(panel: Panel):
     pf = conn_kw / conn_kva if conn_kva else 1.0
     dem_pf = dem_kw / math.hypot(dem_kw, dem_kvar) if dem_kw else 1.0
 
-    cont_kva = sum(r["d_kva"] for r in rows if r["load"].continuous) / div
+    cont_kva = math.fsum(r["d_kva"] for r in rows if r["load"].continuous) / div
     design_kva = coin_kva + 0.25 * cont_kva + 0.25 * largest_motor_kva
 
     k = math.sqrt(3) if pphases == 3 else 1.0
@@ -251,7 +251,7 @@ def calculate(panel: Panel):
     vph = ln if pphases == 3 else (ll / 2.0 if wiring == "1ph3w" else ll)
     used = [p for p in letters]
     phase_amps = {p: phase_kva[p] / div * 1000.0 / vph for p in used}
-    avg = sum(phase_amps.values()) / len(used) if used else 0.0
+    avg = math.fsum(phase_amps.values()) / len(used) if used else 0.0
     imbalance = (max(phase_amps.values()) - avg) / avg * 100.0 if avg else 0
     # size feeder on the larger of balanced design current and worst phase
     scale = design_kva / coin_kva if coin_kva else 1.0
@@ -267,7 +267,7 @@ def calculate(panel: Panel):
     return {
         "rows": rows, "categories": cat, "notes": notes,
         "connected": {"kw": conn_kw, "kvar": conn_kvar, "kva": conn_kva,
-                      "kva_arith": sum(r["kva"] for r in rows), "pf": pf},
+                      "kva_arith": math.fsum(r["kva"] for r in rows), "pf": pf},
         "demand": {"kw": dem_kw, "kvar": dem_kvar, "kva": dem_kva_arith,
                    "pf": dem_pf},
         "coincident": {"kw": coin_kw, "kvar": coin_kvar, "kva": coin_kva,
@@ -283,7 +283,7 @@ def calculate(panel: Panel):
         "imbalance_pct": imbalance,
         "cap_kvar": cap,
         "system": (ll, ln, pphases, wiring),
-        "demand_factor_overall": (dem_kva_arith / sum(r["kva"] for r in rows)
+        "demand_factor_overall": (dem_kva_arith / math.fsum(r["kva"] for r in rows)
                                   if rows else 1.0),
     }
 
