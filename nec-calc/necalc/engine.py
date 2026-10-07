@@ -240,6 +240,17 @@ class WiringInput:
     conduit_type: str = "EMT"
     min_size: str = "12"           # design minimum (e.g. 12 AWG practice)
     edition: str = "2023"
+    # ---- busway (method == "busway", Article 368) ----
+    method: str = "cable"          # "cable" | "busway"
+    bw_type: str = "bw_feeder"     # "bw_feeder" | "bw_plugin"
+    bw_neutral: str = "n100"       # "n100" | "n200" (4-wire systems)
+    bw_ground: str = "g_int50"     # "g_int50" | "g_housing"
+    bw_load: str = "concentrated"  # "concentrated" | "distributed"
+    bw_rating: float = 0.0         # 0 = auto-select
+    bw_r: float = 0.0              # milliohm / 100 ft L-N, 0 = typical
+    bw_x: float = 0.0              # milliohm / 100 ft L-N, 0 = typical
+    bw_sccr: float = 0.0           # kA, 0 = typical
+    fault_ka: float = 0.0          # available fault current, 0 = unknown
 
 
 def _ungrounded_and_neutral(w: WiringInput):
@@ -302,6 +313,8 @@ def size_conductors(i_design, i_load, ocpd, w: WiringInput,
     ocpd:     overcurrent device rating protecting the conductors
     skip_protection: True for motor circuits (430.52 / 240.4(G))
     """
+    if w.method == "busway":
+        return size_busway(i_design, i_load, ocpd, w, res)
     ed = w.edition
     res = res or Result("conductors")
     phases, n_ungrounded, has_neutral = _ungrounded_and_neutral(w)
@@ -437,6 +450,152 @@ def size_conductors(i_design, i_load, ocpd, w: WiringInput,
         "wire_text": _wire_text(sets, n_ungrounded, size, neutral, egc,
                                 w.material, w.insulation, cond,
                                 w.conduit_type),
+    })
+    return res
+
+
+# ---------------------------------------------------------------------------
+# Busway (Article 368)
+# ---------------------------------------------------------------------------
+def busway_derate(ambient_c):
+    """Ambient derating from the 40 C UL 857 rating (I^2R heating)."""
+    if ambient_c <= T.BUSWAY_AMBIENT_BASE:
+        return 1.0
+    if ambient_c >= T.BUSWAY_HOTSPOT:
+        raise CalcError("err_ambient", ambient=ambient_c,
+                        temp=T.BUSWAY_HOTSPOT)
+    return math.sqrt((T.BUSWAY_HOTSPOT - ambient_c) /
+                     (T.BUSWAY_HOTSPOT - T.BUSWAY_AMBIENT_BASE))
+
+
+def busway_impedance(rating, w):
+    """(R, X) in milliohm per 100 ft, line-to-neutral."""
+    r = w.bw_r or T.BUSWAY_R_K[w.material] / rating
+    x = w.bw_x or r * T.BUSWAY_X_RATIO
+    return r, x
+
+
+def busway_sccr(rating, w):
+    if w.bw_sccr:
+        return w.bw_sccr
+    keys = [k for k in T.BUSWAY_SCCR_TYPICAL if k <= rating]
+    return T.BUSWAY_SCCR_TYPICAL[max(keys) if keys
+                                 else min(T.BUSWAY_SCCR_TYPICAL)]
+
+
+def busway_vd(i, rating, w):
+    r, x = busway_impedance(rating, w)
+    pf = max(min(w.pf, 1.0), 0.0)
+    z = r * pf + x * math.sqrt(1 - pf * pf)
+    dist = 0.5 if w.bw_load == "distributed" else 1.0
+    vd = SQRT3 * i * z / 1000.0 * w.length_ft / 100.0 * dist
+    return vd, 100.0 * vd / w.voltage
+
+
+def size_busway(i_design, i_load, ocpd, w: WiringInput, res=None):
+    """Select a busway rating instead of cables (Article 368)."""
+    ed = w.edition
+    res = res or Result("conductors")
+    phases, _, has_neutral = WIRING[w.wiring]
+    if phases != 3:
+        raise CalcError("err_busway_phase")
+    if w.voltage > 1000:
+        raise CalcError("err_busway_voltage", volts=w.voltage)
+    f = busway_derate(w.ambient_c)
+    res.add("st_bw_derate", ref("busway_rating", ed), ambient=w.ambient_c,
+            factor=f)
+    plugin = w.bw_type == "bw_plugin"
+    if w.bw_rating:
+        ratings = [w.bw_rating]
+    else:
+        ratings = [r for r in T.BUSWAY_RATINGS
+                   if not plugin or r <= T.BUSWAY_PLUGIN_MAX]
+
+    def checks(r):
+        a = r * f
+        ok_d = a >= i_design - 1e-9
+        ok_p = True
+        if ocpd:
+            nxt = next_std_ocpd(a)
+            ok_p = a >= ocpd - 1e-9 or (ocpd <= 800 and nxt is not None
+                                         and nxt >= ocpd)
+        return ok_d, ok_p
+
+    chosen = next((r for r in ratings if all(checks(r))), None)
+    if chosen is None:
+        if not w.bw_rating:
+            raise CalcError("err_busway_range",
+                            amps=round(max(i_design, ocpd or 0), 1))
+        chosen = w.bw_rating
+    ok_d, ok_p = checks(chosen)
+    res.add("st_bw_select", ref("busway_rating", ed), ok=ok_d,
+            rating=chosen, factor=f, amps=chosen * f, need=i_design)
+    if ocpd:
+        res.add("st_bw_ocpd", ref("busway_ocpd", ed), ok=ok_p, ocpd=ocpd,
+                amps=chosen * f)
+
+    # ---- voltage drop / upsizing -------------------------------------
+    amp_rating = chosen
+    vd_v, vd_pct = busway_vd(i_load, chosen, w)
+    if w.vd_limit_pct and vd_pct > w.vd_limit_pct:
+        fixed = bool(w.bw_rating or w.bw_r)
+        better = None if fixed else next(
+            (r for r in ratings if r > chosen and
+             busway_vd(i_load, r, w)[1] <= w.vd_limit_pct), None)
+        if better:
+            chosen = better
+            vd_v, vd_pct = busway_vd(i_load, chosen, w)
+        else:
+            res.warn("w_vd_not_met", limit=w.vd_limit_pct, pct=vd_pct)
+    r_m, x_m = busway_impedance(chosen, w)
+    res.add("st_bw_vd", ref("busway_vd", ed) + "; " + ref("vd_note", ed),
+            ok=(not w.vd_limit_pct) or vd_pct <= w.vd_limit_pct + 1e-9,
+            amps=i_load, length=w.length_ft, r=r_m, x=x_m, load=w.bw_load,
+            volts=vd_v, pct=vd_pct, limit=w.vd_limit_pct)
+    if chosen != amp_rating:
+        res.add("st_bw_upsize", ref("vd_note", ed), old=amp_rating,
+                new=chosen)
+
+    # ---- short-circuit rating ----------------------------------------
+    sccr = busway_sccr(chosen, w)
+    if w.fault_ka:
+        res.add("st_bw_sccr", ref("busway_sccr", ed),
+                ok=sccr >= w.fault_ka - 1e-9, sccr=sccr, fault=w.fault_ka)
+    else:
+        res.add("st_bw_sccr_info", ref("busway_sccr", ed), sccr=sccr)
+        res.warn("w_bw_fault_unknown")
+
+    neutral = w.bw_neutral if has_neutral else "n0"
+    res.add("st_bw_ground", ref("busway_ground", ed), neutral=neutral,
+            ground=w.bw_ground)
+    res.add("st_bw_install", ref("busway_install", ed))
+    if not (w.bw_r and w.bw_x and w.bw_sccr):
+        res.warn("w_bw_typical")
+    if chosen > T.BUSWAY_COMMON_MAX:
+        res.warn("w_bw_large", rating=chosen)
+
+    mat = "CU" if w.material == "cu" else "AL"
+    text = (f"{chosen:g}A {'PLUG-IN' if plugin else 'FEEDER'} BUSWAY, "
+            f"{w.voltage:g}V 3PH {4 if has_neutral else 3}W"
+            + ({"n100": ", 100% N", "n200": ", 200% N"}.get(neutral, ""))
+            + (", 50% INT. GND" if w.bw_ground == "g_int50"
+               else ", HOUSING GND")
+            + f", {mat}, {sccr:g}kA SCCR")
+    res.summary.update({
+        "method": "busway",
+        "sets": 1,
+        "size": "-",
+        "size_label": f"{chosen:g} A busway",
+        "ampacity": None,
+        "bw_ampacity": chosen * f,
+        "neutral": "-",
+        "egc": "-",
+        "conduit": "-",
+        "vd_pct": vd_pct,
+        "vd_v": vd_v,
+        "busway_text": text,
+        "bw_rating": chosen,
+        "sccr_ka": sccr,
     })
     return res
 
@@ -819,6 +978,8 @@ def design_transformer(x: TransformerInput, sec_wiring: WiringInput = None,
 
     if sec_wiring is not None and x.sec_v <= 1000:
         sec_wiring.voltage = x.sec_v
+        if not sec_wiring.fault_ka and isc:
+            sec_wiring.fault_ka = isc / 1000.0
         sr = Result("secondary")
         size_conductors(i_sec * 1.25, i_sec, s_sel or next_std_ocpd(
             i_sec * 1.25), sec_wiring, res=sr)

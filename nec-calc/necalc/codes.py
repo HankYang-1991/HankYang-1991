@@ -60,6 +60,12 @@ _BASE = {
     "tray_amp_lv_single": "392.80(A)(2), Table 310.17",
     "tray_amp_mv": "392.80(B), 315.60",
     "tray_egc": "392.60",
+    "busway_rating": "UL 857 (40 °C ambient rating)",
+    "busway_ocpd": "368.17(A), 240.4(B)",
+    "busway_vd": "Manufacturer R / X data",
+    "busway_sccr": "110.10, UL 857",
+    "busway_ground": "368.60, 250.118",
+    "busway_install": "368.10, 368.12, 368.17(C), 368.30",
 }
 
 _2026_OVERRIDES = {

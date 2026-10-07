@@ -432,3 +432,22 @@ MV_AMPACITY_AIR_TYPICAL = {
 # 3/C MV cable OD ~= 2.155 x single-conductor OD + overall jacket (TYPICAL)
 MV_3C_OD_FACTOR = 2.155
 MV_3C_JACKET_IN = 0.20
+
+# ---------------------------------------------------------------------------
+# Busway (Article 368, UL 857).  Ratings are at 40 C ambient (UL 857).
+# Impedance and short-circuit ratings are TYPICAL for low-impedance
+# (sandwich) feeder busway - replace with the manufacturer's data.
+# ---------------------------------------------------------------------------
+BUSWAY_RATINGS = [225, 400, 600, 800, 1000, 1200, 1350, 1600, 2000, 2500,
+                  3000, 4000, 5000, 6000]
+BUSWAY_PLUGIN_MAX = 5000        # plug-in busway lines typically stop here
+BUSWAY_COMMON_MAX = 5000        # many UL 857 lines stop at 5000 A
+BUSWAY_AMBIENT_BASE = 40.0      # C, UL 857 rating ambient
+BUSWAY_HOTSPOT = 95.0           # C, 40 C ambient + 55 C rise
+# R (milliohm per 100 ft, line-to-neutral) ~= K / rating (TYPICAL)
+BUSWAY_R_K = {"cu": 950.0, "al": 1000.0}
+BUSWAY_X_RATIO = 0.35           # X / R, sandwich construction (TYPICAL)
+# Short-circuit current rating, kA symmetrical (TYPICAL standard ratings)
+BUSWAY_SCCR_TYPICAL = {225: 22, 400: 42, 600: 42, 800: 65, 1000: 75,
+                       1200: 85, 1350: 85, 1600: 100, 2000: 100, 2500: 100,
+                       3000: 100, 4000: 150, 5000: 150, 6000: 200}

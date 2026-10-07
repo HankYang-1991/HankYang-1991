@@ -184,3 +184,64 @@ class MVCableTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuswayTests(unittest.TestCase):
+    def _w(self, **kw):
+        d = dict(voltage=480, wiring="3ph4w", method="busway", length_ft=50,
+                 pf=0.9)
+        d.update(kw)
+        return E.WiringInput(**d)
+
+    def test_transformer_secondaries(self):
+        # 125 % of secondary FLA -> OCPD -> busway rated >= OCPD (> 800 A)
+        for kva, ocpd, bus in ((1500, 2500, 2500), (2500, 4000, 4000),
+                               (3000, 5000, 5000)):
+            x = E.TransformerInput(kva=kva, pri_v=24900, sec_v=480,
+                                   z_pct=5.75)
+            r = E.design_transformer(x, sec_wiring=self._w())
+            s = r.children["secondary"].summary
+            self.assertEqual(r.summary["sec_ocpd"], ocpd)
+            self.assertEqual(s["bw_rating"], bus)
+            # SCCR checked against the transformer's infinite-bus fault
+            sccr = [st for st in r.children["secondary"].steps
+                    if st.key == "st_bw_sccr"][0]
+            self.assertTrue(sccr.ok)
+
+    def test_6000a(self):
+        r = E.design_general(0, self._w(), load_amps=4700)   # 5875 A design
+        self.assertEqual(r.summary["ocpd"], 6000)
+        self.assertEqual(r.summary["bw_rating"], 6000)
+        self.assertIn("w_bw_large", [k for k, _ in r.warnings])
+
+    def test_368_17_a_next_size_up(self):
+        # <= 800 A: next standard OCPD above the busway rating is allowed
+        r = E.size_busway(580, 500, 600, self._w())
+        self.assertEqual(r.summary["bw_rating"], 600)
+        # > 800 A: OCPD may not exceed the busway rating (1350 A on 1600 A)
+        r = E.size_busway(1300, 1100, 1600, self._w())
+        self.assertEqual(r.summary["bw_rating"], 1600)
+
+    def test_ambient_derating(self):
+        r = E.size_busway(2000, 1600, 2000, self._w(ambient_c=50))
+        self.assertAlmostEqual(r.summary["bw_ampacity"],
+                               2500 * math.sqrt(45 / 55))
+        self.assertEqual(r.summary["bw_rating"], 2500)
+
+    def test_distributed_load_halves_vd(self):
+        a = E.size_busway(1000, 1000, 1000, self._w(length_ft=300))
+        b = E.size_busway(1000, 1000, 1000,
+                          self._w(length_ft=300, bw_load="distributed"))
+        self.assertAlmostEqual(b.summary["vd_pct"], a.summary["vd_pct"] / 2)
+
+    def test_sccr_fail_and_plugin_limit(self):
+        r = E.size_busway(700, 600, 800, self._w(fault_ka=100))
+        st = [s for s in r.steps if s.key == "st_bw_sccr"][0]
+        self.assertFalse(st.ok)                     # 800 A typical 65 kA
+        with self.assertRaises(E.CalcError):
+            E.size_busway(5500, 5000, 6000, self._w(bw_type="bw_plugin"))
+
+    def test_single_phase_rejected(self):
+        with self.assertRaises(E.CalcError) as cm:
+            E.design_general(10000, self._w(voltage=240, wiring="1ph3w"))
+        self.assertEqual(cm.exception.key, "err_busway_phase")

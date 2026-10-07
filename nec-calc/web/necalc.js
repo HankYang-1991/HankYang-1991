@@ -51,10 +51,8 @@
     }
     return hi;
   }
-  function pyRound(x, nd) {  // Python round() - ties to even
-    var m = Math.pow(10, nd || 0), y = x * m, r = Math.round(y);
-    if (Math.abs(y % 1) === 0.5 && r % 2 !== 0) r -= 1;
-    return r / m;
+  function pyRound(x, nd) {  // Python round(): exact binary value, ties to even
+    return parseFloat(toFixedPy(x, nd || 0));
   }
   function ref(key, ed) {
     var refs = DATA.refs[ed] || DATA.refs["2023"];
@@ -212,7 +210,9 @@
     return Object.assign({ voltage: 208, wiring: "3ph4w", material: "cu",
       insulation: "THHN", term_temp: 75, ambient_c: 30, extra_ccc: 0,
       neutral_ccc: false, sets: 0, max_size: "500", length_ft: 100, pf: 0.9,
-      vd_limit_pct: 3, conduit_type: "EMT", min_size: "12", edition: "2023" }, o || {});
+      vd_limit_pct: 3, conduit_type: "EMT", min_size: "12", edition: "2023",
+      method: "cable", bw_type: "bw_feeder", bw_neutral: "n100", bw_ground: "g_int50",
+      bw_load: "concentrated", bw_rating: 0, bw_r: 0, bw_x: 0, bw_sccr: 0, fault_ka: 0 }, o || {});
   }
   function ungroundedAndNeutral(w) {
     var c = WIRING[w.wiring];
@@ -250,6 +250,7 @@
   }
 
   function sizeConductors(iDesign, iLoad, ocpd, w, skipProt, res) {
+    if (w.method === "busway") return sizeBusway(iDesign, iLoad, ocpd, w, res);
     var ed = w.edition;
     res = res || new Result("conductors");
     var un = ungroundedAndNeutral(w), phases = un[0], nUng = un[1], hasN = un[2];
@@ -350,6 +351,88 @@
       vd_limit: w.vd_limit_pct,
       wire_text: wireText(nSets, nUng, size, neutral, egc, w.material, w.insulation, cond, w.conduit_type)
     });
+    return res;
+  }
+
+  // ------------------------------------------------------------------
+  // busway (Article 368)
+  // ------------------------------------------------------------------
+  function buswayDerate(amb) {
+    if (amb <= T.BUSWAY_AMBIENT_BASE) return 1;
+    if (amb >= T.BUSWAY_HOTSPOT) throw new CalcError("err_ambient", { ambient: amb, temp: T.BUSWAY_HOTSPOT });
+    return Math.sqrt((T.BUSWAY_HOTSPOT - amb) / (T.BUSWAY_HOTSPOT - T.BUSWAY_AMBIENT_BASE));
+  }
+  function buswayImpedance(rating, w) {
+    var r = w.bw_r || T.BUSWAY_R_K[w.material] / rating;
+    return [r, w.bw_x || r * T.BUSWAY_X_RATIO];
+  }
+  function buswaySccr(rating, w) {
+    if (w.bw_sccr) return w.bw_sccr;
+    var keys = Object.keys(T.BUSWAY_SCCR_TYPICAL).map(Number);
+    var le = keys.filter(function (k) { return k <= rating; });
+    var k = le.length ? Math.max.apply(null, le) : Math.min.apply(null, keys);
+    return T.BUSWAY_SCCR_TYPICAL[String(k)];
+  }
+  function buswayVd(i, rating, w) {
+    var z = buswayImpedance(rating, w), pf = Math.max(Math.min(w.pf, 1), 0);
+    var ze = z[0] * pf + z[1] * Math.sqrt(1 - pf * pf);
+    var vd = SQRT3 * i * ze / 1000 * w.length_ft / 100 * (w.bw_load === "distributed" ? 0.5 : 1);
+    return [vd, 100 * vd / w.voltage];
+  }
+  function sizeBusway(iDesign, iLoad, ocpd, w, res) {
+    var ed = w.edition;
+    res = res || new Result("conductors");
+    var c = WIRING[w.wiring], hasN = c[2];
+    if (c[0] !== 3) throw new CalcError("err_busway_phase", {});
+    if (w.voltage > 1000) throw new CalcError("err_busway_voltage", { volts: w.voltage });
+    var f = buswayDerate(w.ambient_c);
+    res.add("st_bw_derate", ref("busway_rating", ed), null, { ambient: w.ambient_c, factor: f });
+    var plugin = w.bw_type === "bw_plugin";
+    var ratings = w.bw_rating ? [w.bw_rating] : T.BUSWAY_RATINGS.filter(function (r) {
+      return !plugin || r <= T.BUSWAY_PLUGIN_MAX; });
+    function checks(r) {
+      var a = r * f, okD = a >= iDesign - EPS, okP = true;
+      if (ocpd) { var nx = nextStdOcpd(a); okP = a >= ocpd - EPS || (ocpd <= 800 && nx !== null && nx >= ocpd); }
+      return [okD, okP];
+    }
+    var chosen = null;
+    for (var i = 0; i < ratings.length; i++) { var ck = checks(ratings[i]); if (ck[0] && ck[1]) { chosen = ratings[i]; break; } }
+    if (chosen === null) {
+      if (!w.bw_rating) throw new CalcError("err_busway_range", { amps: pyRound(Math.max(iDesign, ocpd || 0), 1) });
+      chosen = w.bw_rating;
+    }
+    var cc = checks(chosen);
+    res.add("st_bw_select", ref("busway_rating", ed), cc[0], { rating: chosen, factor: f, amps: chosen * f, need: iDesign });
+    if (ocpd) res.add("st_bw_ocpd", ref("busway_ocpd", ed), cc[1], { ocpd: ocpd, amps: chosen * f });
+    var ampRating = chosen, vd = buswayVd(iLoad, chosen, w);
+    if (w.vd_limit_pct && vd[1] > w.vd_limit_pct) {
+      var better = null;
+      if (!(w.bw_rating || w.bw_r))
+        for (var j = 0; j < ratings.length; j++)
+          if (ratings[j] > chosen && buswayVd(iLoad, ratings[j], w)[1] <= w.vd_limit_pct) { better = ratings[j]; break; }
+      if (better) { chosen = better; vd = buswayVd(iLoad, chosen, w); }
+      else res.warn("w_vd_not_met", { limit: w.vd_limit_pct, pct: vd[1] });
+    }
+    var z = buswayImpedance(chosen, w);
+    res.add("st_bw_vd", ref("busway_vd", ed) + "; " + ref("vd_note", ed),
+      (!w.vd_limit_pct) || vd[1] <= w.vd_limit_pct + EPS,
+      { amps: iLoad, length: w.length_ft, r: z[0], x: z[1], load: w.bw_load, volts: vd[0], pct: vd[1], limit: w.vd_limit_pct });
+    if (chosen !== ampRating) res.add("st_bw_upsize", ref("vd_note", ed), null, { old: ampRating, new: chosen });
+    var sccr = buswaySccr(chosen, w);
+    if (w.fault_ka) res.add("st_bw_sccr", ref("busway_sccr", ed), sccr >= w.fault_ka - EPS, { sccr: sccr, fault: w.fault_ka });
+    else { res.add("st_bw_sccr_info", ref("busway_sccr", ed), null, { sccr: sccr }); res.warn("w_bw_fault_unknown", {}); }
+    var neutral = hasN ? w.bw_neutral : "n0";
+    res.add("st_bw_ground", ref("busway_ground", ed), null, { neutral: neutral, ground: w.bw_ground });
+    res.add("st_bw_install", ref("busway_install", ed), null, {});
+    if (!(w.bw_r && w.bw_x && w.bw_sccr)) res.warn("w_bw_typical", {});
+    if (chosen > T.BUSWAY_COMMON_MAX) res.warn("w_bw_large", { rating: chosen });
+    var text = fmtG(chosen) + "A " + (plugin ? "PLUG-IN" : "FEEDER") + " BUSWAY, " + fmtG(w.voltage) + "V 3PH " +
+      (hasN ? 4 : 3) + "W" + ({ n100: ", 100% N", n200: ", 200% N" }[neutral] || "") +
+      (w.bw_ground === "g_int50" ? ", 50% INT. GND" : ", HOUSING GND") +
+      ", " + (w.material === "cu" ? "CU" : "AL") + ", " + fmtG(sccr) + "kA SCCR";
+    Object.assign(res.summary, { method: "busway", sets: 1, size: "-", size_label: fmtG(chosen) + " A busway",
+      ampacity: null, bw_ampacity: chosen * f, neutral: "-", egc: "-", conduit: "-", vd_pct: vd[1], vd_v: vd[0],
+      vd_limit: w.vd_limit_pct, busway_text: text, bw_rating: chosen, sccr_ka: sccr });
     return res;
   }
 
@@ -601,6 +684,7 @@
     }
     if (secW && x.sec_v <= 1000) {
       secW.voltage = x.sec_v;
+      if (!secW.fault_ka && isc) secW.fault_ka = isc / 1000;
       var sr = new Result("secondary");
       sizeConductors(iSec * 1.25, iSec, sSel || nextStdOcpd(iSec * 1.25), secW, false, sr);
       sr.add("st_xfmr_sec_cond", ref("xfmr_sec_cond", ed), null, {});
@@ -1090,7 +1174,9 @@
   var SUMMARY_FIELDS = {
     general: [["i_load", "s_i_load", "{v:.1f} A"], ["i_design", "s_i_design", "{v:.1f} A"],
       ["ocpd", "s_ocpd", "{v} A"], ["switch", "s_switch", "{v} A"], ["wire_text", "s_wire", "{v}"],
-      ["ampacity", "s_ampacity", "{v:.1f} A"], ["vd_pct", "s_vd", "{v:.2f} %"]],
+      ["busway_text", "s_busway", "{v}"], ["ampacity", "s_ampacity", "{v:.1f} A"],
+      ["bw_ampacity", "s_bw_ampacity", "{v:.0f} A"], ["sccr_ka", "s_sccr", "{v:g} kA"],
+      ["vd_pct", "s_vd", "{v:.2f} %"]],
     motor: [["flc", "s_flc", "{v} A"], ["i_design", "s_i_design", "{v:.1f} A"],
       ["ocpd", "s_ocpd_motor", "{v:.0f} A"], ["overload", "s_overload", "{v:.1f} A"],
       ["switch", "s_switch", "{v} A"], ["wire_text", "s_wire", "{v}"],
@@ -1151,7 +1237,7 @@
     voltageDrop: voltageDrop, selectConduit: selectConduit, scMinCmil: scMinCmil,
     wiringInput: wiringInput, mvInput: mvInput, transformerInput: transformerInput,
     loadItem: loadItem, panelInput: panelInput, trayCable: trayCable, trayInput: trayInput,
-    sizeConductors: sizeConductors, designGeneral: designGeneral, designMotor: designMotor,
+    sizeConductors: sizeConductors, sizeBusway: sizeBusway, designGeneral: designGeneral, designMotor: designMotor,
     designMvCable: designMvCable, designTransformer: designTransformer,
     loadKva: loadKva, loadKw: loadKw, loadKvar: loadKvar, loadAmps: loadAmps,
     calculateLoads: calculateLoads, sizeFeeder: sizeFeeder,

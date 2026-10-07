@@ -74,6 +74,12 @@ for _p, _d in WIRING_DEFAULTS.items():
         f"{_p}.w.len": _d["length"], f"{_p}.w.pf": _d["pf"],
         f"{_p}.w.vd": _d["vd"], f"{_p}.w.conduit": _d["conduit"],
         f"{_p}.w.min": "12",
+        # busway (Article 368); transformer secondaries default to busway
+        f"{_p}.w.method": "busway" if _p == "xf" else "cable",
+        f"{_p}.w.bw_type": "bw_feeder", f"{_p}.w.bw_neutral": "n100",
+        f"{_p}.w.bw_ground": "g_int50", f"{_p}.w.bw_load": "concentrated",
+        f"{_p}.w.bw_rating": "0", f"{_p}.w.bw_r": "0", f"{_p}.w.bw_x": "0",
+        f"{_p}.w.bw_sccr": "0", f"{_p}.w.fault": "0",
     })
 
 PANEL_EXAMPLE = [
@@ -140,6 +146,7 @@ class App:
         self.results = {}       # tab key -> (title key, Result | callable)
         self.inputs = {}        # tab key -> [(label key, value)]
         self.texts = {}         # tab key -> Text widget
+        self._method_frames = {}  # wiring prefix -> (cable, busway) frames
         self.current_tab = 0
         self._setup_style()
         self.build()
@@ -290,7 +297,7 @@ class App:
         return txt
 
     def wiring_group(self, parent, prefix, col, show_voltage=True,
-                     show_pf=True, row=0):
+                     show_pf=True, row=0, allow_busway=True):
         g = self.group(parent, "grp_wiring", col, row=row)
         p = prefix + ".w."
         r = 0
@@ -302,18 +309,38 @@ class App:
             self._row(g, r, "wiring", self.combo(p + "wiring", WIRING_CODES,
                                                  width=16))
             r += 1
+        if allow_busway:
+            self._row(g, r, "method", self.combo(
+                p + "method", ("cable", "busway"), width=16,
+                command=lambda: self._show_method(prefix))); r += 1
         self._row(g, r, "material", self.combo(p + "mat", ("cu", "al"),
                                                width=16)); r += 1
-        self._row(g, r, "insulation", self.combo(p + "ins", ("THHN", "XHHW"),
-                                                 width=16)); r += 1
-        self._row(g, r, "term_temp", self.combo(
+        # cable-only and busway-only fields share the same grid cell
+        cab = ttk.Frame(g)
+        bus = ttk.Frame(g)
+        for fr in (cab, bus):
+            fr.grid(row=r, column=0, columnspan=2, sticky="we")
+            fr.columnconfigure(1, weight=1)
+        q = 0
+        self._row(cab, q, "insulation", self.combo(p + "ins", ("THHN", "XHHW"),
+                                                   width=16)); q += 1
+        self._row(cab, q, "term_temp", self.combo(
             p + "term", ("60", "75", "90"), labeler=lambda c: c + " °C",
-            width=16)); r += 1
-        self._row(g, r, "conduit_type", self.combo(p + "conduit", CONDUITS,
-                                                   width=16)); r += 1
-        self._row(g, r, "min_size", self.combo(
+            width=16)); q += 1
+        self._row(cab, q, "conduit_type", self.combo(p + "conduit", CONDUITS,
+                                                     width=16)); q += 1
+        self._row(cab, q, "min_size", self.combo(
             p + "min", ("14", "12", "10"), labeler=T.size_label, width=16))
-        r += 1
+        q = 0
+        self._row(bus, q, "bw_type", self.combo(
+            p + "bw_type", ("bw_feeder", "bw_plugin"), width=16)); q += 1
+        self._row(bus, q, "bw_neutral", self.combo(
+            p + "bw_neutral", ("n100", "n200"), width=16)); q += 1
+        self._row(bus, q, "bw_ground", self.combo(
+            p + "bw_ground", ("g_int50", "g_housing"), width=16)); q += 1
+        self._row(bus, q, "bw_rating", self.editable(
+            p + "bw_rating", ["0"] + [str(x) for x in T.BUSWAY_RATINGS],
+            width=10)); q += 1
         g2 = self.group(parent, "grp_conditions", col + 1, row=row)
         r = 0
         self._row(g2, r, "length", self.entry(p + "len", 10)); r += 1
@@ -321,15 +348,40 @@ class App:
             self._row(g2, r, "pf", self.entry(p + "pf", 10)); r += 1
         self._row(g2, r, "vd_limit", self.entry(p + "vd", 10)); r += 1
         self._row(g2, r, "ambient", self.entry(p + "amb", 10)); r += 1
-        self._row(g2, r, "extra_ccc", self.entry(p + "extra", 10)); r += 1
-        self._row(g2, r, "sets", self.entry(p + "sets", 10)); r += 1
-        self._row(g2, r, "max_size", self.combo(
+        cab2 = ttk.Frame(g2)
+        bus2 = ttk.Frame(g2)
+        for fr in (cab2, bus2):
+            fr.grid(row=r, column=0, columnspan=2, sticky="we")
+            fr.columnconfigure(1, weight=1)
+        q = 0
+        self._row(cab2, q, "extra_ccc", self.entry(p + "extra", 10)); q += 1
+        self._row(cab2, q, "sets", self.entry(p + "sets", 10)); q += 1
+        self._row(cab2, q, "max_size", self.combo(
             p + "max", ("250", "350", "500", "600", "750"),
-            labeler=T.size_label, width=12)); r += 1
-        ttk.Checkbutton(g2, variable=self.v[p + "nccc"],
+            labeler=T.size_label, width=12)); q += 1
+        ttk.Checkbutton(cab2, variable=self.v[p + "nccc"],
                         text=self.t("neutral_ccc")).grid(
-            row=r, column=0, columnspan=2, sticky="w", padx=4)
+            row=q, column=0, columnspan=2, sticky="w", padx=4)
+        q = 0
+        self._row(bus2, q, "bw_load", self.combo(
+            p + "bw_load", ("concentrated", "distributed"), width=16)); q += 1
+        self._row(bus2, q, "bw_fault", self.entry(p + "fault", 10)); q += 1
+        self._row(bus2, q, "bw_r", self.entry(p + "bw_r", 10)); q += 1
+        self._row(bus2, q, "bw_x", self.entry(p + "bw_x", 10)); q += 1
+        self._row(bus2, q, "bw_sccr", self.entry(p + "bw_sccr", 10)); q += 1
+        self._method_frames[prefix] = (cab, cab2, bus, bus2)
+        if not allow_busway:
+            self.v[p + "method"].set("cable")
+        self._show_method(prefix)
         return g, g2
+
+    def _show_method(self, prefix):
+        cab, cab2, bus, bus2 = self._method_frames[prefix]
+        busway = self.v[prefix + ".w.method"].get() == "busway"
+        for fr in (cab, cab2):
+            fr.grid_remove() if busway else fr.grid()
+        for fr in (bus, bus2):
+            fr.grid() if busway else fr.grid_remove()
 
     def wiring_input(self, prefix):
         p = prefix + ".w."
@@ -346,7 +398,14 @@ class App:
             pf=_f(g("pf"), self.t("pf")),
             vd_limit_pct=_f(g("vd"), self.t("vd_limit")),
             conduit_type=g("conduit"), min_size=g("min"),
-            edition=self.edition)
+            edition=self.edition, method=g("method"),
+            bw_type=g("bw_type"), bw_neutral=g("bw_neutral"),
+            bw_ground=g("bw_ground"), bw_load=g("bw_load"),
+            bw_rating=_f(g("bw_rating") or 0, self.t("bw_rating")),
+            bw_r=_f(g("bw_r") or 0, self.t("bw_r")),
+            bw_x=_f(g("bw_x") or 0, self.t("bw_x")),
+            bw_sccr=_f(g("bw_sccr") or 0, self.t("bw_sccr")),
+            fault_ka=_f(g("fault") or 0, self.t("bw_fault")))
 
     def calc_button(self, parent, cmd, row, col=0, text_key="calculate"):
         b = ttk.Button(parent, text=self.t(text_key), command=cmd,
@@ -478,6 +537,7 @@ class App:
         p = prefix + ".w."
         g = lambda k: self.v[p + k].get()
         return [("voltage", g("voltage")), ("wiring", "opt_" + g("wiring")),
+                ("method", "opt_" + g("method")),
                 ("material", "opt_" + g("mat")),
                 ("insulation", "opt_" + g("ins")),
                 ("term_temp", g("term")), ("conduit_type", g("conduit")),
@@ -504,7 +564,7 @@ class App:
                         text=self.t("design_b_ee")) \
             .grid(row=r, column=0, columnspan=2, sticky="w", padx=4); r += 1
         self.calc_button(g, self.calc_motor, r)
-        self.wiring_group(f, "mo", 1)
+        self.wiring_group(f, "mo", 1, allow_busway=False)
         self.results_area(f, "mo")
 
     def calc_motor(self):
@@ -590,6 +650,7 @@ class App:
             pri = None
             if x.pri_v <= 1000:
                 pri = self.wiring_input("xf")
+                pri.method = "cable"
                 pri.wiring = "3ph3w" if x.phases == 3 else "1ph2w"
                 pri.length_ft = _f(g("pri_len"), self.t("pri_length"))
             mv = self._mv_input() if x.pri_v > 1000 else None

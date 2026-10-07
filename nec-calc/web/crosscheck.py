@@ -64,7 +64,16 @@ def rnd_wiring(rng, voltage=None, wiring=None):
         vd_limit_pct=rng.choice([0, 2, 3, 3, 5]),
         conduit_type=rng.choice(["EMT", "IMC", "RMC", "PVC40", "PVC80"]),
         min_size=rng.choice(["14", "12", "12", "10"]),
-        edition=rng.choice(["2023", "2026"]))
+        edition=rng.choice(["2023", "2026"]),
+        method=rng.choice(["cable", "cable", "busway"]),
+        bw_type=rng.choice(["bw_feeder", "bw_plugin"]),
+        bw_neutral=rng.choice(["n100", "n200"]),
+        bw_ground=rng.choice(["g_int50", "g_housing"]),
+        bw_load=rng.choice(["concentrated", "distributed"]),
+        bw_rating=rng.choice([0, 0, 0, 0, 800, 2500, 4000]),
+        bw_r=rng.choice([0, 0, 0, 0.5]), bw_x=rng.choice([0, 0, 0.2]),
+        bw_sccr=rng.choice([0, 0, 65, 100]),
+        fault_ka=rng.choice([0, 0, 25.0, 65.0, 120.0]))
 
 
 def case_general(rng):

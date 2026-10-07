@@ -250,7 +250,9 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
   function wDef(o) {
     return Object.assign({ voltage: "208", wiring: "3ph4w", mat: "cu", ins: "THHN", term: "75",
       conduit: "EMT", min: "12", len: "100", pf: "0.9", vd: "3", amb: "30", extra: "0",
-      sets: "0", max: "500", nccc: false }, o);
+      sets: "0", max: "500", nccc: false, method: "cable", bw_type: "bw_feeder", bw_neutral: "n100",
+      bw_ground: "g_int50", bw_load: "concentrated", bw_rating: "0", bw_r: "0", bw_x: "0",
+      bw_sccr: "0", fault: "0" }, o);
   }
   var EXAMPLE_LOADS = [
     { name: "Office lighting", category: "lighting", qty: 12, rating: 600, unit: "VA", pf: 0.95, voltage: 120, phases: 1, continuous: true },
@@ -276,7 +278,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       mow: wDef({ voltage: "480", wiring: "3ph3w", len: "150", pf: "0.85" }),
       xf: { kva: "1500", pri_v: "24900", sec_v: "480", phases: "3", z: "5.75", loc: "any",
             pri_dev: "fuse", sec_dev: "cb", scheme: "pri_sec", pri_len: "100" },
-      xfw: wDef({ wiring: "3ph4w", len: "25", vd: "2", conduit: "RMC" }),
+      xfw: wDef({ wiring: "3ph4w", len: "25", vd: "2", conduit: "RMC", method: "busway" }),
       mv: { kv: "24.9", amps: "35", mat: "cu", ins: "25kV_133", df: "1.25", ocpd_type: "fuse", ocpd: "65",
             fault: "10", time: "0.5", t1: "90", t2: "250", conduit: "PVC40", od: "0", egc: true },
       tr: { type: "ladder", depth: "4", width: "0", covered: false, arr: "random", ambient: "30",
@@ -371,14 +373,23 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       f.push(F(p + ".voltage", "voltage", "num", { list: ["120", "208", "240", "277", "480", "600"] }));
       f.push(F(p + ".wiring", "wiring", "sel", { opts: WIRINGS }));
     }
-    f.push(F(p + ".mat", "material", "sel", { opts: ["cu", "al"] }),
-      F(p + ".ins", "insulation", "sel", { opts: ["THHN", "XHHW"] }),
+    var busway = opts.busway !== false && getPath(p + ".method") === "busway";
+    if (opts.busway !== false) f.push(F(p + ".method", "method", "sel", { opts: ["cable", "busway"] }));
+    f.push(F(p + ".mat", "material", "sel", { opts: ["cu", "al"] }));
+    if (busway) f.push(F(p + ".bw_type", "bw_type", "sel", { opts: ["bw_feeder", "bw_plugin"] }),
+      F(p + ".bw_neutral", "bw_neutral", "sel", { opts: ["n100", "n200"] }),
+      F(p + ".bw_ground", "bw_ground", "sel", { opts: ["g_int50", "g_housing"] }),
+      F(p + ".bw_load", "bw_load", "sel", { opts: ["concentrated", "distributed"] }));
+    else f.push(F(p + ".ins", "insulation", "sel", { opts: ["THHN", "XHHW"] }),
       F(p + ".term", "term_temp", "sel", { opts: ["60", "75", "90"], lab: function (c) { return c + " °C"; } }),
-      F(p + ".conduit", "conduit_type", "sel", { opts: CONDUITS }),
-      F(p + ".len", "length", "num"));
+      F(p + ".conduit", "conduit_type", "sel", { opts: CONDUITS }));
+    f.push(F(p + ".len", "length", "num"));
     if (opts.pf !== false) f.push(F(p + ".pf", "pf", "num"));
-    f.push(F(p + ".vd", "vd_limit", "num"), F(p + ".amb", "ambient", "num"),
-      F(p + ".extra", "extra_ccc", "num"), F(p + ".sets", "sets", "num"),
+    f.push(F(p + ".vd", "vd_limit", "num"), F(p + ".amb", "ambient", "num"));
+    if (busway) f.push(F(p + ".fault", "bw_fault", "num"),
+      F(p + ".bw_rating", "bw_rating", "num", { list: ["0"].concat(T.BUSWAY_RATINGS.map(String)) }),
+      F(p + ".bw_r", "bw_r", "num"), F(p + ".bw_x", "bw_x", "num"), F(p + ".bw_sccr", "bw_sccr", "num"));
+    else f.push(F(p + ".extra", "extra_ccc", "num"), F(p + ".sets", "sets", "num"),
       F(p + ".max", "max_size", "sel", { opts: ["250", "350", "500", "600", "750"], lab: sizeLab }),
       F(p + ".min", "min_size", "sel", { opts: ["14", "12", "10"], lab: sizeLab }),
       F(p + ".nccc", "neutral_ccc", "chk"));
@@ -395,7 +406,11 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       extra_ccc: Math.trunc(num(w.extra, "extra_ccc")), neutral_ccc: !!w.nccc,
       sets: Math.trunc(num(w.sets, "sets")), max_size: w.max, length_ft: num(w.len, "length"),
       pf: w.pf === undefined ? 0.9 : num(w.pf, "pf"), vd_limit_pct: num(w.vd, "vd_limit"),
-      conduit_type: w.conduit, min_size: w.min, edition: S.ed }, overrides || {}));
+      conduit_type: w.conduit, min_size: w.min, edition: S.ed, method: w.method || "cable",
+      bw_type: w.bw_type, bw_neutral: w.bw_neutral, bw_ground: w.bw_ground, bw_load: w.bw_load,
+      bw_rating: num(w.bw_rating || "0", "bw_rating"), bw_r: num(w.bw_r || "0", "bw_r"),
+      bw_x: num(w.bw_x || "0", "bw_x"), bw_sccr: num(w.bw_sccr || "0", "bw_sccr"),
+      fault_ka: num(w.fault || "0", "bw_fault") }, overrides || {}));
   }
 
   // ------------------------------------------------------------------ modules
@@ -446,10 +461,10 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       F("mow.wiring", "wiring", "sel", { opts: ["1ph2w", "3ph3w"] }),
       F(m + ".fla", "nameplate_fla", "num", { ph: "—" }), F(m + ".flc", "flc_override", "num", { ph: "—" }),
       F(m + ".sf", "sf115", "chk"), F(m + ".eeb", "design_b_ee", "chk")
-    ]) + moreBlock(wiringFields("mow", { voltage: false }), false) + "</div>";
+    ]) + moreBlock(wiringFields("mow", { voltage: false, busway: false }), false) + "</div>";
   }
   function calcMotor() {
-    var m = S.mo, w = wiringInput(S.mow);
+    var m = S.mo, w = wiringInput(S.mow, { method: "cable" });
     return N.designMotor(m.hp, w, { device: m.device, nameplate_fla: num(m.fla, "nameplate_fla", true),
       sf_115: !!m.sf, design_b_ee: !!m.eeb, flc_override: num(m.flc, "flc_override", true) });
   }
@@ -486,7 +501,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     if (x.phases === 1 && sec.wiring.charAt(0) === "3") sec.wiring = "1ph3w";
     if (x.phases === 3 && sec.wiring.charAt(0) === "1") sec.wiring = "3ph4w";
     var pri = null;
-    if (x.pri_v <= 1000) pri = wiringInput(S.xfw, { voltage: x.pri_v, wiring: x.phases === 3 ? "3ph3w" : "1ph2w",
+    if (x.pri_v <= 1000) pri = wiringInput(S.xfw, { method: "cable", voltage: x.pri_v, wiring: x.phases === 3 ? "3ph3w" : "1ph2w",
       length_ft: num(g.pri_len, "pri_length") });
     return N.designTransformer(x, sec, pri, x.pri_v > 1000 ? mvInputFromState() : null);
   }
@@ -645,16 +660,19 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       '</b></div><div class="track ' + state + '"><i style="width:' + Math.min(ratio / scale, 1) * 100 + '%"></i><s style="left:' +
       (100 / scale) + '%"></s></div></div>';
   }
+  var BUSWAY_KEYS = [["ocpd", "s_ocpd", "{v} A"], ["bw_rating", "s_busway", "{v:g} A"], ["sccr_ka", "s_sccr", "{v:g} kA"]];
   function resultBody(res, key) {
     var s = res.summary, h = "";
     if (s.wire_text) h += '<div class="callout"><p class="eyebrow" style="margin:0 0 2px">' + esc(t(res.kind === "mv_cable" ? "s_mv_cable" : "s_wire")) +
       '</p><div class="wire">' + esc(s.wire_text) + "</div></div>";
-    var keys = (KEY_FIELDS[res.kind] || []).filter(function (k) { return s[k[0]] !== null && s[k[0]] !== undefined && s[k[0]] !== "-"; });
+    if (s.busway_text) h += '<div class="callout"><p class="eyebrow" style="margin:0 0 2px">' + esc(t("s_busway")) +
+      '</p><div class="wire">' + esc(s.busway_text) + "</div></div>";
+    var keys = (s.method === "busway" ? BUSWAY_KEYS : (KEY_FIELDS[res.kind] || [])).filter(function (k) { return s[k[0]] !== null && s[k[0]] !== undefined && s[k[0]] !== "-"; });
     if (keys.length) h += '<div class="keys">' + keys.map(function (k) {
       var val = N.pyFormat(k[2], { v: s[k[0]] });
       return '<div class="key"><div class="k">' + esc(t(k[1])) + '</div><div class="v' + (val.length > 8 ? " txt" : "") + '">' + esc(val) + "</div></div>";
     }).join("") + "</div>";
-    var shown = {}; keys.forEach(function (k) { shown[k[0]] = 1; }); shown.wire_text = 1;
+    var shown = {}; keys.forEach(function (k) { shown[k[0]] = 1; }); shown.wire_text = 1; shown.busway_text = 1;
     var rows = N.summaryRows(res, S.lang).filter(function (r) { return !shown[r[2]]; });
     if (rows.length) h += '<dl class="kv">' + rows.map(function (r) { return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>";
     var m = "";
@@ -824,6 +842,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       if (c) c.value = S.br.cont;
     }
     save();
+    if (/\.method$/.test(path)) { rerenderForm(); return; }
     if (path.indexOf("lc.") === 0 && S.tab === "lc" && e.type === "change" && /^lc\.(system|div|tpf)$/.test(path)) { rerenderForm(); return; }
     schedule();
   }

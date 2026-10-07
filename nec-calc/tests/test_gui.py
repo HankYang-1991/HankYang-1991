@@ -29,6 +29,15 @@ class GuiSmokeTest(unittest.TestCase):
                 app.calc_feeder()
                 for key in ("br", "mo", "xf", "mv", "tr", "lc"):
                     self.assertIn(key, app.results, (lang, key))
+                app.v["br.w.method"].set("busway")
+                app.v["br.w.wiring"].set("3ph4w")
+                app.v["br.w.voltage"].set("480")
+                app.v["br.value"].set("1500")
+                app.v["br.unit"].set("A")
+                app.calc_branch()
+                summ = app.results["br"][1].summary
+                self.assertEqual(summ["method"], "busway")
+                app.v["br.w.method"].set("cable")
                 app.calc_capacity()
                 self.assertIn("tr", app.results)
             app.v["edition"].set("2026")

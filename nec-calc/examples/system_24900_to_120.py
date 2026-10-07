@@ -1,6 +1,7 @@
 """Example: 24.9 kV utility service down to 120 V branch circuits.
 
     24.9 kV  --[2500 kVA, Z 5.75 %]--> 480Y/277 V switchboard
+             (secondary as cable, then as a 4000 A busway)
     480 V    --[75 kVA, Z 4.5 %]-----> 208Y/120 V panel LP-1
     LP-1 load calculation -> feeder, then sample 120 V branch circuits,
     a 480 V motor, and the cable tray that carries the 480 V feeders.
@@ -31,6 +32,12 @@ mv = E.MVInput(fault_ka=12.5, clear_time_s=0.3, insulation_level="25kV_133",
 sec = E.WiringInput(wiring="3ph4w", length_ft=30, conduit_type="RMC",
                     max_size="600", vd_limit_pct=1.0, edition=ed)
 show("2500 kVA 24.9 kV - 480Y/277 V", E.design_transformer(x, sec, mv=mv))
+
+# 1b. Same transformer with a feeder busway to the switchboard (Art. 368)
+bus = E.WiringInput(wiring="3ph4w", length_ft=60, method="busway",
+                    bw_neutral="n200", vd_limit_pct=1.0, edition=ed)
+show("2500 kVA secondary busway", E.design_transformer(
+    x, bus, mv=E.MVInput(**vars(mv))).children["secondary"])
 
 # 2. Dry-type transformer 480 V -> 208Y/120 V
 x2 = E.TransformerInput(kva=75, pri_v=480, sec_v=208, z_pct=4.5,
