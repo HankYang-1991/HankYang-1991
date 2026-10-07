@@ -33,6 +33,7 @@ DEFAULTS = {
     "xf.kva": "1500", "xf.pri_v": "24900", "xf.sec_v": "480",
     "xf.phases": "3", "xf.z": "5.75", "xf.loc": "any", "xf.pri_dev": "fuse",
     "xf.sec_dev": "cb", "xf.scheme": "pri_sec", "xf.pri_len": "100",
+    "xf.pri_method": "cable", "xf.pri_fault": "0",
     # MV cable
     "mv.kv": "24.9", "mv.amps": "35", "mv.mat": "cu", "mv.ins": "25kV_133",
     "mv.fault": "10", "mv.time": "0.5", "mv.t1": "90", "mv.t2": "250",
@@ -298,7 +299,8 @@ class App:
         return txt
 
     def wiring_group(self, parent, prefix, col, show_voltage=True,
-                     show_pf=True, row=0, allow_busway=True):
+                     show_pf=True, row=0, allow_busway=True,
+                     method_label="method"):
         g = self.group(parent, "grp_wiring", col, row=row)
         p = prefix + ".w."
         r = 0
@@ -311,7 +313,7 @@ class App:
                                                  width=16))
             r += 1
         if allow_busway:
-            self._row(g, r, "method", self.combo(
+            self._row(g, r, method_label, self.combo(
                 p + "method", ("cable", "busway"), width=16,
                 command=lambda: self._show_method(prefix))); r += 1
         self._row(g, r, "material", self.combo(p + "mat", ("cu", "al"),
@@ -617,13 +619,20 @@ class App:
         self._row(g, r, "lv_scheme", self.combo("xf.scheme",
                                                 ("pri_sec", "pri_only"))); r += 1
         self._row(g, r, "pri_length", self.entry("xf.pri_len")); r += 1
+        self._row(g, r, "pri_method", self.combo(
+            "xf.pri_method", ("cable", "busway"))); r += 1
+        self._row(g, r, "pri_fault", self.entry("xf.pri_fault")); r += 1
+        ttk.Label(g, text=self.t("pri_bw_note"), foreground="#57606a",
+                  wraplength=300).grid(row=r, column=0, columnspan=2,
+                                       sticky="w", padx=4); r += 1
         ttk.Label(g, text="MV primary cable: settings from \"" +
                   self.t("tab_mv") + "\" tab" if self.lang == "en" else
                   "高壓一次側電纜：沿用「" + self.t("tab_mv") + "」頁設定",
                   foreground="#57606a", wraplength=300).grid(
             row=r, column=0, columnspan=2, sticky="w", padx=4); r += 1
         self.calc_button(g, self.calc_xfmr, r)
-        self.wiring_group(f, "xf", 1, show_voltage=False)
+        self.wiring_group(f, "xf", 1, show_voltage=False,
+                          method_label="sec_method")
         self.results_area(f, "xf")
 
     def _mv_input(self):
@@ -654,12 +663,12 @@ class App:
                 sec.wiring = "1ph3w"
             if x.phases == 3 and sec.wiring.startswith("1"):
                 sec.wiring = "3ph4w"
-            pri = None
-            if x.pri_v <= 1000:
-                pri = self.wiring_input("xf")
-                pri.method = "cable"
-                pri.wiring = "3ph3w" if x.phases == 3 else "1ph2w"
-                pri.length_ft = _f(g("pri_len"), self.t("pri_length"))
+            # primary: own conductor type and fault, other settings shared
+            pri = self.wiring_input("xf")
+            pri.method = g("pri_method")
+            pri.wiring = "3ph3w" if x.phases == 3 else "1ph2w"
+            pri.length_ft = _f(g("pri_len"), self.t("pri_length"))
+            pri.fault_ka = _f(g("pri_fault") or 0, self.t("pri_fault"))
             mv = self._mv_input() if x.pri_v > 1000 else None
             res = E.design_transformer(x, sec_wiring=sec, pri_wiring=pri,
                                        mv=mv)
@@ -667,7 +676,8 @@ class App:
             self.inputs["xf"] = [("kva", g("kva")), ("pri_v", g("pri_v")),
                                  ("sec_v", g("sec_v")), ("z_pct", g("z")),
                                  ("location", "opt_" + g("loc")),
-                                 ("pri_device", "opt_" + g("pri_dev"))]
+                                 ("pri_device", "opt_" + g("pri_dev")),
+                                 ("pri_method", "opt_" + g("pri_method"))]
             self.render("xf")
         self._run("xf", run)
 

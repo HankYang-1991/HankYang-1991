@@ -268,6 +268,25 @@ class BuswayTests(unittest.TestCase):
             E.size_busway(1000, 900, 1000, self._w(bw_rating=2200))
         self.assertEqual(cm.exception.key, "err_busway_data")
 
+    def test_transformer_primary_busway(self):
+        # 1000 kVA 480 V -> 208Y/120 V: primary 1202.8 A, OCPD 1600 A
+        x = E.TransformerInput(kva=1000, pri_v=480, sec_v=208, z_pct=5.75)
+        pri = self._w(wiring="3ph3w", fault_ka=65)
+        sec = E.WiringInput(wiring="3ph4w", length_ft=20)
+        r = E.design_transformer(x, sec_wiring=sec, pri_wiring=pri)
+        p = r.children["primary"].summary
+        self.assertEqual(p["method"], "busway")
+        self.assertEqual(p["bw_rating"], 1600)
+        self.assertEqual(p["sccr_ka"], 100)        # 50 kA std < 65 -> H
+        self.assertEqual(p["bw_catalog"], "CFH2316G")
+        self.assertEqual(r.children["secondary"].summary.get("method"),
+                         None)                     # secondary stays cable
+        # MV primary: busway does not apply, MV cable is sized
+        x = E.TransformerInput(kva=1500, pri_v=24900, sec_v=480)
+        r = E.design_transformer(x, sec_wiring=self._w(), pri_wiring=pri)
+        self.assertIn("w_pri_busway_mv",
+                      [k for k, _ in r.children["primary"].warnings])
+
     def test_single_phase(self):
         r = E.design_general(30000, self._w(voltage=240, wiring="1ph3w"))
         self.assertEqual(r.summary["method"], "busway")

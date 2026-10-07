@@ -725,6 +725,7 @@
       m.kv = x.pri_v / 1000; m.amps = iPri;
       if (pSel) { m.ocpd_type = x.pri_device === "fuse" ? "fuse" : "relay"; m.ocpd_amps = pSel; }
       res.children.primary = designMvCable(m);
+      if (priW && priW.method === "busway") res.children.primary.warn("w_pri_busway_mv", { volts: x.pri_v });
     } else if (priW) {
       priW.voltage = x.pri_v;
       var pr = new Result("primary");

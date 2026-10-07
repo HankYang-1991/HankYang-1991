@@ -685,6 +685,19 @@ TEXT = {
     "w_bw_fault_unknown": (
         "Available fault current not entered - busway SCCR not checked",
         "未輸入可用故障電流，未檢核匯流排槽短路耐受"),
+    "pri_method": ("Primary conductor type", "一次側配線型式"),
+    "sec_method": ("Secondary conductor type", "二次側配線型式"),
+    "pri_fault": ("Primary available fault (kA, 0 = unknown)",
+                  "一次側可用故障電流 (kA，0 = 未知)"),
+    "pri_bw_note": ("A primary busway uses the busway settings of the "
+                    "secondary (type, ground, bracing, material).",
+                    "一次側匯流排槽沿用二次側之匯流排槽設定（型式、接地、"
+                    "耐受等級、材質）。"),
+    "w_pri_busway_mv": (
+        "Primary {volts:g} V is above 600 V - I-Line busway does not apply; "
+        "MV cable sized instead",
+        "一次側 {volts:g} V 高於 600 V，不適用 I-Line 匯流排槽，"
+        "改以高壓電纜計算"),
     "err_busway_voltage": (
         "I-Line busway is rated 600 V ({volts:g} V given)",
         "I-Line 匯流排槽額定 600 V (輸入 {volts:g} V)"),

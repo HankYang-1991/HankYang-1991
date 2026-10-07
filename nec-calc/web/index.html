@@ -277,7 +277,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       mo: { hp: "10", device: "itcb", fla: "", flc: "", sf: true, eeb: false },
       mow: wDef({ voltage: "480", wiring: "3ph3w", len: "150", pf: "0.85" }),
       xf: { kva: "1500", pri_v: "24900", sec_v: "480", phases: "3", z: "5.75", loc: "any",
-            pri_dev: "fuse", sec_dev: "cb", scheme: "pri_sec", pri_len: "100" },
+            pri_dev: "fuse", sec_dev: "cb", scheme: "pri_sec", pri_len: "100", pri_method: "cable", pri_fault: "0" },
       xfw: wDef({ wiring: "3ph4w", len: "25", vd: "2", conduit: "RMC", method: "busway" }),
       mv: { kv: "24.9", amps: "35", mat: "cu", ins: "25kV_133", df: "1.25", ocpd_type: "fuse", ocpd: "65",
             fault: "10", time: "0.5", t1: "90", t2: "250", conduit: "PVC40", od: "0", egc: true },
@@ -377,7 +377,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       f.push(F(p + ".wiring", "wiring", "sel", { opts: WIRINGS }));
     }
     var busway = opts.busway !== false && getPath(p + ".method") === "busway";
-    if (opts.busway !== false) f.push(F(p + ".method", "method", "sel", { opts: ["cable", "busway"] }));
+    if (opts.busway !== false) f.push(F(p + ".method", opts.methodLabel || "method", "sel", { opts: ["cable", "busway"] }));
     f.push(F(p + ".mat", "material", "sel", { opts: ["cu", "al"] }));
     if (busway) f.push(F(p + ".bw_type", "bw_type", "sel", { opts: ["bw_feeder", "bw_plugin"] }),
       F(p + ".bw_neutral", "bw_neutral", "sel", { opts: ["n100", "harm_x", "harm_y"] }),
@@ -486,9 +486,11 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       F(x + ".pri_dev", "pri_device", "sel", { opts: ["fuse", "cb"] }),
       F(x + ".sec_dev", "sec_device", "sel", { opts: ["cb", "fuse"] }),
       F(x + ".scheme", "lv_scheme", "sel", { opts: ["pri_sec", "pri_only"] }),
-      F(x + ".pri_len", "pri_length", "num")
-    ]) + '<p class="note">' + esc(t("mv_from_tab")) + "</p>" +
-      moreBlock(wiringFields("xfw", { voltage: false }), false) + "</div>";
+      F(x + ".pri_len", "pri_length", "num"),
+      F(x + ".pri_method", "pri_method", "sel", { opts: ["cable", "busway"] }),
+      F(x + ".pri_fault", "pri_fault", "num")
+    ]) + '<p class="note">' + esc(t("mv_from_tab")) + " " + esc(t("pri_bw_note")) + "</p>" +
+      moreBlock(wiringFields("xfw", { voltage: false, methodLabel: "sec_method" }), false) + "</div>";
   }
   function mvInputFromState() {
     var m = S.mv;
@@ -506,9 +508,10 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     var sec = wiringInput(S.xfw, { voltage: x.sec_v });
     if (x.phases === 1 && sec.wiring.charAt(0) === "3") sec.wiring = "1ph3w";
     if (x.phases === 3 && sec.wiring.charAt(0) === "1") sec.wiring = "3ph4w";
-    var pri = null;
-    if (x.pri_v <= 1000) pri = wiringInput(S.xfw, { method: "cable", voltage: x.pri_v, wiring: x.phases === 3 ? "3ph3w" : "1ph2w",
-      length_ft: num(g.pri_len, "pri_length") });
+    // primary: own conductor type and fault, other settings shared with the secondary
+    var pri = wiringInput(S.xfw, { method: g.pri_method || "cable", voltage: x.pri_v,
+      wiring: x.phases === 3 ? "3ph3w" : "1ph2w", length_ft: num(g.pri_len, "pri_length"),
+      fault_ka: num(g.pri_fault || "0", "pri_fault") });
     return N.designTransformer(x, sec, pri, x.pri_v > 1000 ? mvInputFromState() : null);
   }
 

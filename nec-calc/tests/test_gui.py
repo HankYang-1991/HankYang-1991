@@ -38,6 +38,17 @@ class GuiSmokeTest(unittest.TestCase):
                 summ = app.results["br"][1].summary
                 self.assertEqual(summ["method"], "busway")
                 app.v["br.w.method"].set("cable")
+                app.v["xf.pri_v"].set("480")
+                app.v["xf.sec_v"].set("208")
+                app.v["xf.kva"].set("1000")
+                app.v["xf.pri_method"].set("busway")
+                app.calc_xfmr()
+                prim = app.results["xf"][1].children["primary"].summary
+                self.assertEqual(prim["bw_rating"], 1600)
+                app.v["xf.pri_v"].set("24900")
+                app.v["xf.sec_v"].set("480")
+                app.v["xf.kva"].set("1500")
+                app.v["xf.pri_method"].set("cable")
                 app.calc_capacity()
                 self.assertIn("tr", app.results)
             app.v["edition"].set("2026")

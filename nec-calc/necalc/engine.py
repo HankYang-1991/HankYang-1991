@@ -1055,6 +1055,8 @@ def design_transformer(x: TransformerInput, sec_wiring: WiringInput = None,
             m.ocpd_type = "fuse" if x.pri_device == "fuse" else "relay"
             m.ocpd_amps = p_sel
         res.children["primary"] = design_mv_cable(m)
+        if pri_wiring is not None and pri_wiring.method == "busway":
+            res.children["primary"].warn("w_pri_busway_mv", volts=x.pri_v)
     elif pri_wiring is not None:
         pri_wiring.voltage = x.pri_v
         pr = Result("primary")
