@@ -80,6 +80,7 @@ for _p, _d in WIRING_DEFAULTS.items():
         f"{_p}.w.bw_ground": "g_int50", f"{_p}.w.bw_load": "concentrated",
         f"{_p}.w.bw_rating": "0", f"{_p}.w.bw_r": "0", f"{_p}.w.bw_x": "0",
         f"{_p}.w.bw_sccr": "0", f"{_p}.w.fault": "0",
+        f"{_p}.w.bw_bracing": "auto", f"{_p}.w.bw_runs": "0",
     })
 
 PANEL_EXAMPLE = [
@@ -335,12 +336,15 @@ class App:
         self._row(bus, q, "bw_type", self.combo(
             p + "bw_type", ("bw_feeder", "bw_plugin"), width=16)); q += 1
         self._row(bus, q, "bw_neutral", self.combo(
-            p + "bw_neutral", ("n100", "n200"), width=16)); q += 1
+            p + "bw_neutral", ("n100", "harm_x", "harm_y"), width=16)); q += 1
         self._row(bus, q, "bw_ground", self.combo(
-            p + "bw_ground", ("g_int50", "g_housing"), width=16)); q += 1
+            p + "bw_ground", ("g_int50", "g_int50cu", "g_housing"),
+            width=16)); q += 1
+        self._row(bus, q, "bw_bracing", self.combo(
+            p + "bw_bracing", ("auto", "std", "high"), width=16)); q += 1
         self._row(bus, q, "bw_rating", self.editable(
-            p + "bw_rating", ["0"] + [str(x) for x in T.BUSWAY_RATINGS],
-            width=10)); q += 1
+            p + "bw_rating", ["0"] + [str(x) for x in sorted(
+                T.ILINE_IMPEDANCE["cu"])], width=10)); q += 1
         g2 = self.group(parent, "grp_conditions", col + 1, row=row)
         r = 0
         self._row(g2, r, "length", self.entry(p + "len", 10)); r += 1
@@ -366,6 +370,7 @@ class App:
         self._row(bus2, q, "bw_load", self.combo(
             p + "bw_load", ("concentrated", "distributed"), width=16)); q += 1
         self._row(bus2, q, "bw_fault", self.entry(p + "fault", 10)); q += 1
+        self._row(bus2, q, "bw_runs", self.entry(p + "bw_runs", 10)); q += 1
         self._row(bus2, q, "bw_r", self.entry(p + "bw_r", 10)); q += 1
         self._row(bus2, q, "bw_x", self.entry(p + "bw_x", 10)); q += 1
         self._row(bus2, q, "bw_sccr", self.entry(p + "bw_sccr", 10)); q += 1
@@ -401,6 +406,8 @@ class App:
             edition=self.edition, method=g("method"),
             bw_type=g("bw_type"), bw_neutral=g("bw_neutral"),
             bw_ground=g("bw_ground"), bw_load=g("bw_load"),
+            bw_bracing=g("bw_bracing"),
+            bw_runs=int(_f(g("bw_runs") or 0, self.t("bw_runs"))),
             bw_rating=_f(g("bw_rating") or 0, self.t("bw_rating")),
             bw_r=_f(g("bw_r") or 0, self.t("bw_r")),
             bw_x=_f(g("bw_x") or 0, self.t("bw_x")),
@@ -1141,7 +1148,8 @@ class App:
     # ------------------------------------------------------------------
     REF_TABLES = ("310.16", "310.17", "310.15(B)(1)(1)", "310.15(C)(1)",
                   "250.122", "Ch9 T4", "Ch9 T5", "Ch9 T9", "430.248",
-                  "430.250", "430.52", "450.3(A)", "392.22", "MV (TYPICAL)")
+                  "430.250", "430.52", "450.3(A)", "392.22", "MV (TYPICAL)",
+                  "I-Line busway")
 
     def tab_ref(self, f):
         top = ttk.Frame(f)
@@ -1327,6 +1335,22 @@ def ref_table_text(name):
         return ("TYPICAL MV data - verify with NEC 315.60 / manufacturer\n" +
                 _fmt_rows(("Size", "Duct Cu", "Duct Al", "Air Cu",
                            "OD 25kV133"), rows))
+    if name == "I-Line busway":
+        rows = []
+        for r in sorted(T.ILINE_IMPEDANCE["cu"]):
+            al = T.ILINE_IMPEDANCE["al"].get(r)
+            cu = T.ILINE_IMPEDANCE["cu"][r]
+            sc = [T.ILINE_SCCR[(m, t, b)].get(r)
+                  for m in ("al", "cu") for t in ("bw_feeder", "bw_plugin")
+                  for b in ("std", "high")]
+            rows.append((r, *(al[:2] if al else (None, None)), *cu[:2], *sc))
+        return ("Schneider Electric I-Line busway, catalog 5600CT9101 "
+                "(03/2018)\nTable 5: R / X line-to-neutral, milliohm per "
+                "100 ft, 60 Hz, 80 °C.  Table 1: SCCR kA (UL 3-cycle)\n"
+                "F = feeder, P = plug-in, H = high short circuit\n" +
+                _fmt_rows(("A", "Al R", "Al X", "Cu R", "Cu X", "AlF",
+                           "AlFH", "AlP", "AlPH", "CuF", "CuFH", "CuP",
+                           "CuPH"), rows))
     return ""
 
 

@@ -212,7 +212,8 @@
       neutral_ccc: false, sets: 0, max_size: "500", length_ft: 100, pf: 0.9,
       vd_limit_pct: 3, conduit_type: "EMT", min_size: "12", edition: "2023",
       method: "cable", bw_type: "bw_feeder", bw_neutral: "n100", bw_ground: "g_int50",
-      bw_load: "concentrated", bw_rating: 0, bw_r: 0, bw_x: 0, bw_sccr: 0, fault_ka: 0 }, o || {});
+      bw_bracing: "auto", bw_load: "concentrated", bw_rating: 0, bw_runs: 0, bw_r: 0, bw_x: 0,
+      bw_sccr: 0, fault_ka: 0 }, o || {});
   }
   function ungroundedAndNeutral(w) {
     var c = WIRING[w.wiring];
@@ -362,77 +363,126 @@
     if (amb >= T.BUSWAY_HOTSPOT) throw new CalcError("err_ambient", { ambient: amb, temp: T.BUSWAY_HOTSPOT });
     return Math.sqrt((T.BUSWAY_HOTSPOT - amb) / (T.BUSWAY_HOTSPOT - T.BUSWAY_AMBIENT_BASE));
   }
+  function sccrTable(material, type, bracing) { return T.ILINE_SCCR[material + "|" + type + "|" + bracing]; }
+  function buswayRatings(material, type) {
+    return Object.keys(sccrTable(material, type, "std")).map(Number).sort(function (a, b) { return a - b; });
+  }
   function buswayImpedance(rating, w) {
-    var r = w.bw_r || T.BUSWAY_R_K[w.material] / rating;
-    return [r, w.bw_x || r * T.BUSWAY_X_RATIO];
+    var row = T.ILINE_IMPEDANCE[w.material][String(rating)];
+    var r = w.bw_r || (row ? row[0] : 0), x = w.bw_x || (row ? row[1] : 0);
+    if (!r) throw new CalcError("err_busway_data", { rating: rating });
+    return [r, x];
   }
-  function buswaySccr(rating, w) {
+  function buswaySccr(rating, w, bracing) {
     if (w.bw_sccr) return w.bw_sccr;
-    var keys = Object.keys(T.BUSWAY_SCCR_TYPICAL).map(Number);
-    var le = keys.filter(function (k) { return k <= rating; });
-    var k = le.length ? Math.max.apply(null, le) : Math.min.apply(null, keys);
-    return T.BUSWAY_SCCR_TYPICAL[String(k)];
+    var v = sccrTable(w.material, w.bw_type, bracing)[String(rating)];
+    return v === undefined ? null : v;
   }
-  function buswayVd(i, rating, w) {
+  function buswayVd(i, rating, w, runs) {
     var z = buswayImpedance(rating, w), pf = Math.max(Math.min(w.pf, 1), 0);
     var ze = z[0] * pf + z[1] * Math.sqrt(1 - pf * pf);
-    var vd = SQRT3 * i * ze / 1000 * w.length_ft / 100 * (w.bw_load === "distributed" ? 0.5 : 1);
+    var k = WIRING[w.wiring][0] === 3 ? SQRT3 : SQRT3 * 1.15;
+    var vd = k * (i / (runs || 1)) * ze / 1000 * w.length_ft / 100 * (w.bw_load === "distributed" ? 0.5 : 1);
     return [vd, 100 * vd / w.voltage];
+  }
+  function buswayCatalog(rating, w, high, neutral, ground) {
+    var c = WIRING[w.wiring];
+    if (c[0] !== 3) return null;
+    var mat = w.material === "al" ? "A" : "C", poles = c[2] ? 5 : 3, amps = Math.floor(rating / 100);
+    if (rating < T.ILINE_LARGE_MIN)
+      return mat + "P" + (high ? "H" : "") + "-" + poles + (amps < 10 ? "0" : "") + amps + (ground !== "g_housing" ? "G" : "");
+    var harm = { harm_x: "X", harm_y: "Y" }[neutral] || "";
+    return mat + (w.bw_type === "bw_plugin" ? "P" : "F") + (high ? "H" : "") + harm + "2" + poles + amps +
+      (ground === "g_int50cu" ? "GG" : "G");
   }
   function sizeBusway(iDesign, iLoad, ocpd, w, res) {
     var ed = w.edition;
     res = res || new Result("conductors");
-    var c = WIRING[w.wiring], hasN = c[2];
-    if (c[0] !== 3) throw new CalcError("err_busway_phase", {});
-    if (w.voltage > 1000) throw new CalcError("err_busway_voltage", { volts: w.voltage });
+    var c = WIRING[w.wiring], phases = c[0], hasN = c[2];
+    if (w.voltage > T.BUSWAY_MAX_VOLTS) throw new CalcError("err_busway_voltage", { volts: w.voltage });
     var f = buswayDerate(w.ambient_c);
     res.add("st_bw_derate", ref("busway_rating", ed), null, { ambient: w.ambient_c, factor: f });
-    var plugin = w.bw_type === "bw_plugin";
-    var ratings = w.bw_rating ? [w.bw_rating] : T.BUSWAY_RATINGS.filter(function (r) {
-      return !plugin || r <= T.BUSWAY_PLUGIN_MAX; });
-    function checks(r) {
-      var a = r * f, okD = a >= iDesign - EPS, okP = true;
+    var ratings = buswayRatings(w.material, w.bw_type);
+    if (w.bw_rating) {
+      if (ratings.indexOf(w.bw_rating) < 0 && !(w.bw_r && w.bw_sccr))
+        throw new CalcError("err_busway_data", { rating: w.bw_rating });
+      ratings = [w.bw_rating];
+    }
+    var runsList = w.bw_runs > 0 ? [w.bw_runs] : [];
+    if (!runsList.length) for (var n0 = 1; n0 <= T.BUSWAY_MAX_RUNS; n0++) runsList.push(n0);
+    function checks(r, n) {
+      var a = r * f * n, okD = a >= iDesign - EPS, okP = true;
       if (ocpd) { var nx = nextStdOcpd(a); okP = a >= ocpd - EPS || (ocpd <= 800 && nx !== null && nx >= ocpd); }
       return [okD, okP];
     }
     var chosen = null;
-    for (var i = 0; i < ratings.length; i++) { var ck = checks(ratings[i]); if (ck[0] && ck[1]) { chosen = ratings[i]; break; } }
-    if (chosen === null) {
+    for (var ni = 0; ni < runsList.length && !chosen; ni++)
+      for (var ri = 0; ri < ratings.length; ri++) {
+        var ck = checks(ratings[ri], runsList[ni]);
+        if (ck[0] && ck[1]) { chosen = [ratings[ri], runsList[ni]]; break; }
+      }
+    if (!chosen) {
       if (!w.bw_rating) throw new CalcError("err_busway_range", { amps: pyRound(Math.max(iDesign, ocpd || 0), 1) });
-      chosen = w.bw_rating;
+      chosen = [w.bw_rating, runsList[runsList.length - 1]];
     }
-    var cc = checks(chosen);
-    res.add("st_bw_select", ref("busway_rating", ed), cc[0], { rating: chosen, factor: f, amps: chosen * f, need: iDesign });
-    if (ocpd) res.add("st_bw_ocpd", ref("busway_ocpd", ed), cc[1], { ocpd: ocpd, amps: chosen * f });
-    var ampRating = chosen, vd = buswayVd(iLoad, chosen, w);
+    var rating = chosen[0], runs = chosen[1], cc = checks(rating, runs);
+    res.add("st_bw_select", ref("busway_rating", ed), cc[0],
+      { runs: runs, rating: rating, factor: f, amps: rating * f * runs, need: iDesign });
+    if (ocpd) res.add("st_bw_ocpd", ref("busway_ocpd", ed), cc[1], { ocpd: ocpd, amps: rating * f * runs });
+    var ampRating = rating, vd = buswayVd(iLoad, rating, w, runs);
     if (w.vd_limit_pct && vd[1] > w.vd_limit_pct) {
       var better = null;
       if (!(w.bw_rating || w.bw_r))
         for (var j = 0; j < ratings.length; j++)
-          if (ratings[j] > chosen && buswayVd(iLoad, ratings[j], w)[1] <= w.vd_limit_pct) { better = ratings[j]; break; }
-      if (better) { chosen = better; vd = buswayVd(iLoad, chosen, w); }
+          if (ratings[j] > rating && buswayVd(iLoad, ratings[j], w, runs)[1] <= w.vd_limit_pct) { better = ratings[j]; break; }
+      if (better) { rating = better; vd = buswayVd(iLoad, rating, w, runs); }
       else res.warn("w_vd_not_met", { limit: w.vd_limit_pct, pct: vd[1] });
     }
-    var z = buswayImpedance(chosen, w);
-    res.add("st_bw_vd", ref("busway_vd", ed) + "; " + ref("vd_note", ed),
+    var z = buswayImpedance(rating, w), userZ = !!(w.bw_r || w.bw_x);
+    res.add("st_bw_vd", ref(userZ ? "busway_vd_user" : "busway_vd", ed) + "; " + ref("vd_note", ed),
       (!w.vd_limit_pct) || vd[1] <= w.vd_limit_pct + EPS,
-      { amps: iLoad, length: w.length_ft, r: z[0], x: z[1], load: w.bw_load, volts: vd[0], pct: vd[1], limit: w.vd_limit_pct });
-    if (chosen !== ampRating) res.add("st_bw_upsize", ref("vd_note", ed), null, { old: ampRating, new: chosen });
-    var sccr = buswaySccr(chosen, w);
-    if (w.fault_ka) res.add("st_bw_sccr", ref("busway_sccr", ed), sccr >= w.fault_ka - EPS, { sccr: sccr, fault: w.fault_ka });
-    else { res.add("st_bw_sccr_info", ref("busway_sccr", ed), null, { sccr: sccr }); res.warn("w_bw_fault_unknown", {}); }
-    var neutral = hasN ? w.bw_neutral : "n0";
-    res.add("st_bw_ground", ref("busway_ground", ed), null, { neutral: neutral, ground: w.bw_ground });
+      { amps: iLoad / runs, length: w.length_ft, r: z[0], x: z[1], load: w.bw_load, volts: vd[0], pct: vd[1], limit: w.vd_limit_pct });
+    if (rating !== ampRating) res.add("st_bw_upsize", ref("vd_note", ed), null, { old: ampRating, new: rating });
+    if (runs > 1) res.warn("w_bw_parallel", { runs: runs, rating: rating });
+    var std = buswaySccr(rating, w, "std");
+    var highOk = has(sccrTable(w.material, w.bw_type, "high"), String(rating)), bracing;
+    if (w.bw_bracing === "high" && highOk) bracing = "high";
+    else if (w.bw_bracing === "auto" && highOk && w.fault_ka && std !== null && std < w.fault_ka - EPS) bracing = "high";
+    else bracing = "std";
+    if (w.bw_bracing === "high" && !highOk) res.warn("w_bw_no_high", { rating: rating });
+    var sccr = buswaySccr(rating, w, bracing), brCode = "br_" + bracing;
+    if (w.fault_ka) res.add("st_bw_sccr", ref("busway_sccr", ed), sccr >= w.fault_ka - EPS,
+      { sccr: sccr, bracing: brCode, fault: w.fault_ka });
+    else { res.add("st_bw_sccr_info", ref("busway_sccr", ed), null, { sccr: sccr, bracing: brCode }); res.warn("w_bw_fault_unknown", {}); }
+    var fit = T.ILINE_SCCR_FITTING_150[w.material + "|" + w.bw_type + "|" + bracing] || [];
+    if (!w.bw_sccr && fit.indexOf(rating) >= 0) res.warn("w_bw_fitting150", {});
+    var large = rating >= T.ILINE_LARGE_MIN, neutral = hasN ? w.bw_neutral : "n0";
+    if ((neutral === "harm_x" || neutral === "harm_y") && !large) { res.warn("w_bw_harmonic_small", {}); neutral = "n100"; }
+    var ground = w.bw_ground;
+    if (ground === "g_housing" && large) { res.warn("w_bw_ground_std", {}); ground = "g_int50"; }
+    if (ground === "g_int50cu" && !large) { res.warn("w_bw_gg_small", {}); ground = "g_int50"; }
+    // Table 6 lists the aluminum (G) ground bus only
+    var rg = ground === "g_int50" ? T.ILINE_GROUND_R[w.material][String(rating)] : undefined;
+    if (rg === undefined)
+      res.add("st_bw_ground_h", ref("busway_ground", ed), null, { neutral: neutral, ground: ground });
+    else res.add("st_bw_ground", ref("busway_ground", ed), null, { neutral: neutral, ground: ground, rg: rg });
+    var cat = buswayCatalog(rating, w, bracing === "high", neutral, ground);
+    if (cat) res.add("st_bw_catalog", ref("busway_catalog", ed), null, { cat: cat });
+    else res.warn("w_bw_1ph_catalog", {});
     res.add("st_bw_install", ref("busway_install", ed), null, {});
-    if (!(w.bw_r && w.bw_x && w.bw_sccr)) res.warn("w_bw_typical", {});
-    if (chosen > T.BUSWAY_COMMON_MAX) res.warn("w_bw_large", { rating: chosen });
-    var text = fmtG(chosen) + "A " + (plugin ? "PLUG-IN" : "FEEDER") + " BUSWAY, " + fmtG(w.voltage) + "V 3PH " +
-      (hasN ? 4 : 3) + "W" + ({ n100: ", 100% N", n200: ", 200% N" }[neutral] || "") +
-      (w.bw_ground === "g_int50" ? ", 50% INT. GND" : ", HOUSING GND") +
+    if (!(w.bw_r && w.bw_x && w.bw_sccr)) res.warn("w_bw_data", {});
+    var wires = phases === 3 ? "3PH " + (hasN ? 4 : 3) + "W" : "1PH " + (hasN ? 3 : 2) + "W";
+    var label = runs > 1 ? runs + " x " + fmtG(rating) + " A" : fmtG(rating) + " A";
+    var text = (runs > 1 ? "(" + runs + ") RUNS OF " : "") + fmtG(rating) + "A I-LINE " +
+      (w.bw_type === "bw_plugin" ? "PLUG-IN" : "FEEDER") + " BUSWAY" + (cat ? " " + cat : "") +
+      ", " + fmtG(w.voltage) + "V " + wires +
+      ({ n100: ", 100% N", harm_x: ", HARMONIC (X)", harm_y: ", HARMONIC (Y)" }[neutral] || "") +
+      ({ g_int50: ", 50% AL GND", g_int50cu: ", 50% CU GND" }[ground] || ", HOUSING GND") +
       ", " + (w.material === "cu" ? "CU" : "AL") + ", " + fmtG(sccr) + "kA SCCR";
-    Object.assign(res.summary, { method: "busway", sets: 1, size: "-", size_label: fmtG(chosen) + " A busway",
-      ampacity: null, bw_ampacity: chosen * f, neutral: "-", egc: "-", conduit: "-", vd_pct: vd[1], vd_v: vd[0],
-      vd_limit: w.vd_limit_pct, busway_text: text, bw_rating: chosen, sccr_ka: sccr });
+    Object.assign(res.summary, { method: "busway", sets: runs, size: "-", size_label: label + " busway",
+      ampacity: null, bw_ampacity: rating * f * runs, neutral: "-", egc: "-", conduit: "-",
+      vd_pct: vd[1], vd_v: vd[0], vd_limit: w.vd_limit_pct, busway_text: text, bw_rating: rating,
+      bw_runs: runs, bw_label: label, bw_catalog: cat, sccr_ka: sccr });
     return res;
   }
 
@@ -1175,7 +1225,8 @@
     general: [["i_load", "s_i_load", "{v:.1f} A"], ["i_design", "s_i_design", "{v:.1f} A"],
       ["ocpd", "s_ocpd", "{v} A"], ["switch", "s_switch", "{v} A"], ["wire_text", "s_wire", "{v}"],
       ["busway_text", "s_busway", "{v}"], ["ampacity", "s_ampacity", "{v:.1f} A"],
-      ["bw_ampacity", "s_bw_ampacity", "{v:.0f} A"], ["sccr_ka", "s_sccr", "{v:g} kA"],
+      ["bw_label", "s_bw_label", "{v}"], ["bw_ampacity", "s_bw_ampacity", "{v:.0f} A"],
+      ["sccr_ka", "s_sccr", "{v:g} kA"],
       ["vd_pct", "s_vd", "{v:.2f} %"]],
     motor: [["flc", "s_flc", "{v} A"], ["i_design", "s_i_design", "{v:.1f} A"],
       ["ocpd", "s_ocpd_motor", "{v:.0f} A"], ["overload", "s_overload", "{v:.1f} A"],
@@ -1237,7 +1288,8 @@
     voltageDrop: voltageDrop, selectConduit: selectConduit, scMinCmil: scMinCmil,
     wiringInput: wiringInput, mvInput: mvInput, transformerInput: transformerInput,
     loadItem: loadItem, panelInput: panelInput, trayCable: trayCable, trayInput: trayInput,
-    sizeConductors: sizeConductors, sizeBusway: sizeBusway, designGeneral: designGeneral, designMotor: designMotor,
+    sizeConductors: sizeConductors, sizeBusway: sizeBusway, buswayRatings: buswayRatings,
+    designGeneral: designGeneral, designMotor: designMotor,
     designMvCable: designMvCable, designTransformer: designTransformer,
     loadKva: loadKva, loadKw: loadKw, loadKvar: loadKvar, loadAmps: loadAmps,
     calculateLoads: calculateLoads, sizeFeeder: sizeFeeder,

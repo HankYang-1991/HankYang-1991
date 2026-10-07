@@ -559,43 +559,55 @@ TEXT = {
     "tray_meter": ("Tray width used", "電纜架寬度使用率"),
 
 
-    # ---------------- busway (Article 368) ----------------
+    # ---------------- busway (Article 368, Schneider I-Line) ----------------
     "method": ("Conductor type", "配線型式"),
     "opt_cable": ("Cable in conduit", "電纜 / 導線管"),
-    "opt_busway": ("Busway", "匯流排槽 (Busway)"),
+    "opt_busway": ("Busway (I-Line)", "匯流排槽 (I-Line)"),
     "grp_busway": ("Busway", "匯流排槽"),
     "bw_type": ("Busway type", "匯流排槽型式"),
-    "opt_bw_feeder": ("Feeder (low impedance)", "饋線型 (低阻抗)"),
+    "opt_bw_feeder": ("Feeder (800 A and up)", "饋線型 (800 A 以上)"),
     "opt_bw_plugin": ("Plug-in", "插接型"),
     "bw_neutral": ("Neutral", "中性線"),
-    "opt_n100": ("100 % neutral", "100 % 中性線"),
-    "opt_n200": ("200 % neutral (non-linear loads)",
-                 "200 % 中性線 (非線性負載)"),
+    "opt_n100": ("100 % neutral (standard)", "100 % 中性線 (標準)"),
+    "opt_harm_x": ("Harmonic rated X (THD 15–35 %)",
+                   "諧波額定 X (THD 15–35 %)"),
+    "opt_harm_y": ("Harmonic rated Y (THD > 35 %)",
+                   "諧波額定 Y (THD > 35 %)"),
     "opt_n0": ("No neutral (3-wire)", "無中性線 (三線式)"),
-    "bw_ground": ("Ground path", "接地方式"),
-    "opt_g_int50": ("50 % internal ground bus", "50 % 內建接地匯流排"),
-    "opt_g_housing": ("Housing as EGC", "外殼作為設備接地導體"),
+    "bw_ground": ("Ground", "接地"),
+    "opt_g_int50": ("50 % aluminum integral ground bus (G)",
+                    "50 % 鋁製內建接地匯流排 (G)"),
+    "opt_g_int50cu": ("50 % copper integral ground bus (GG)",
+                      "50 % 銅製內建接地匯流排 (GG)"),
+    "opt_g_housing": ("Housing only (225–600 A)", "僅外殼接地 (225–600 A)"),
+    "bw_bracing": ("Short-circuit bracing", "短路耐受等級"),
+    "opt_std": ("Standard bracing", "標準耐受"),
+    "opt_high": ("High short circuit (H)", "高短路耐受 (H)"),
+    "opt_br_std": ("standard bracing", "標準耐受"),
+    "opt_br_high": ("high short circuit, H", "高短路耐受 H"),
     "bw_load": ("Load distribution", "負載分布"),
-    "opt_concentrated": ("Concentrated at end", "末端集中負載"),
-    "opt_distributed": ("Uniformly distributed", "均勻分布負載"),
+    "opt_concentrated": ("concentrated at end", "末端集中負載"),
+    "opt_distributed": ("uniformly distributed", "均勻分布負載"),
     "bw_rating": ("Busway rating (A, 0 = auto)", "匯流排槽額定 (A，0 = 自動)"),
-    "bw_r": ("R (mΩ/100 ft, 0 = typical)", "R (mΩ/100 ft，0 = 典型值)"),
-    "bw_x": ("X (mΩ/100 ft, 0 = typical)", "X (mΩ/100 ft，0 = 典型值)"),
-    "bw_sccr": ("SCCR (kA, 0 = typical)", "短路耐受 SCCR (kA，0 = 典型值)"),
+    "bw_runs": ("Parallel runs (0 = auto)", "並聯路數 (0 = 自動)"),
+    "bw_r": ("R (mΩ/100 ft, 0 = I-Line data)", "R (mΩ/100 ft，0 = I-Line 資料)"),
+    "bw_x": ("X (mΩ/100 ft, 0 = I-Line data)", "X (mΩ/100 ft，0 = I-Line 資料)"),
+    "bw_sccr": ("SCCR (kA, 0 = I-Line data)", "短路耐受 (kA，0 = I-Line 資料)"),
     "bw_fault": ("Available fault (kA, 0 = unknown)",
                  "可用故障電流 (kA，0 = 未知)"),
     "s_busway": ("Busway", "匯流排槽"),
+    "s_bw_label": ("Busway rating", "匯流排槽額定"),
     "s_sccr": ("Busway SCCR", "匯流排槽短路耐受"),
-    "s_bw_ampacity": ("Busway rating (derated)", "匯流排槽額定 (降額後)"),
+    "s_bw_ampacity": ("Busway ampacity (derated)", "匯流排槽容量 (降額後)"),
     "st_bw_derate": (
-        "Busway rated at 40 °C ambient; {ambient:g} °C → derating factor "
-        "{factor:.3f}",
-        "匯流排槽額定基準周溫 40 °C；周溫 {ambient:g} °C → 降額係數 "
+        "I-Line rated 55 °C rise over 40 °C ambient; ambient {ambient:g} °C "
+        "→ derating factor {factor:.3f}",
+        "I-Line 額定為周溫 40 °C、溫升 55 °C；周溫 {ambient:g} °C → 降額係數 "
         "{factor:.3f}"),
     "st_bw_select": (
-        "Busway {rating:g} A × {factor:.3f} = {amps:.0f} A ≥ design current "
+        "{runs} × {rating:g} A × {factor:.3f} = {amps:.0f} A ≥ design current "
         "{need:.1f} A",
-        "匯流排槽 {rating:g} A × {factor:.3f} = {amps:.0f} A ≥ 設計電流 "
+        "{runs} × {rating:g} A × {factor:.3f} = {amps:.0f} A ≥ 設計電流 "
         "{need:.1f} A"),
     "st_bw_ocpd": (
         "Busway protected at its rating: OCPD {ocpd:g} A vs {amps:.0f} A "
@@ -603,49 +615,86 @@ TEXT = {
         "匯流排槽依額定保護：保護設備 {ocpd:g} A 對 {amps:.0f} A "
         "(僅 ≤ 800 A 時可取上一級標準額定)"),
     "st_bw_vd": (
-        "Voltage drop: {amps:.1f} A, {length:g} ft, R {r:.3f} / X {x:.3f} "
-        "mΩ per 100 ft, {load} → {volts:.2f} V = {pct:.2f}% (limit "
-        "{limit:g}%)",
-        "壓降：{amps:.1f} A，{length:g} ft，R {r:.3f} / X {x:.3f} "
+        "Voltage drop: {amps:.1f} A per run, {length:g} ft, R {r:.2f} / "
+        "X {x:.2f} mΩ per 100 ft, {load} → {volts:.2f} V = {pct:.2f}% "
+        "(limit {limit:g}%)",
+        "壓降：每路 {amps:.1f} A，{length:g} ft，R {r:.2f} / X {x:.2f} "
         "mΩ/100 ft，{load} → {volts:.2f} V = {pct:.2f}% (限制 {limit:g}%)"),
     "st_bw_upsize": (
         "Busway increased from {old:g} A to {new:g} A for voltage drop",
         "因壓降將匯流排槽由 {old:g} A 加大至 {new:g} A"),
     "st_bw_sccr": (
-        "Short-circuit rating {sccr:g} kA ≥ available fault {fault:.1f} kA",
-        "短路耐受 {sccr:g} kA ≥ 可用故障電流 {fault:.1f} kA"),
+        "Short-circuit rating {sccr:g} kA ({bracing}) ≥ available fault "
+        "{fault:.1f} kA",
+        "短路耐受 {sccr:g} kA ({bracing}) ≥ 可用故障電流 {fault:.1f} kA"),
     "st_bw_sccr_info": (
-        "Busway short-circuit rating {sccr:g} kA - compare with the "
+        "Short-circuit rating {sccr:g} kA ({bracing}) - compare with the "
         "available fault current",
-        "匯流排槽短路耐受 {sccr:g} kA，請與可用故障電流比對"),
+        "短路耐受 {sccr:g} kA ({bracing})，請與可用故障電流比對"),
     "st_bw_ground": (
-        "Neutral: {neutral}; ground path: {ground}; bond per Article 250",
+        "Neutral: {neutral}; ground: {ground}, DC resistance {rg:.1f} mΩ per "
+        "100 ft (Table 6); bond per Article 250",
+        "中性線：{neutral}；接地：{ground}，直流電阻 {rg:.1f} mΩ/100 ft "
+        "(表 6)；依第 250 條接地搭接"),
+    "st_bw_ground_h": (
+        "Neutral: {neutral}; ground: {ground}; bond per Article 250",
         "中性線：{neutral}；接地：{ground}；依第 250 條接地搭接"),
+    "st_bw_catalog": (
+        "I-Line catalog prefix: {cat} (confirm the full catalog number with "
+        "Schneider Electric)",
+        "I-Line 型號字首：{cat} (完整型號請向施耐德電機確認)"),
     "st_bw_install": (
         "Dry, accessible locations (outdoor / wet only if identified); "
         "support at ≤ 5 ft unless marked otherwise; taps through plug-in "
         "devices with overcurrent protection",
         "安裝於乾燥、可觸及處 (戶外/潮濕場所須為適用型)；支撐間距 ≤ 5 ft "
         "(除非另有標示)；分歧須經具過電流保護之插接裝置"),
-    "w_bw_typical": (
-        "Busway R / X and SCCR use TYPICAL values - enter the manufacturer's "
-        "data",
-        "匯流排槽 R / X 及 SCCR 採典型值，請輸入製造商資料"),
-    "w_bw_large": (
-        "{rating:g} A busway: many UL 857 product lines stop at 5000 A - "
-        "confirm availability or use two parallel runs",
-        "{rating:g} A 匯流排槽：多數 UL 857 產品最大 5000 A，請確認供貨或"
-        "改用兩路並聯"),
+    "w_bw_data": (
+        "Impedance and SCCR from Schneider Electric I-Line catalog "
+        "5600CT9101 (03/2018) - confirm current data for the project",
+        "阻抗與短路耐受取自施耐德 I-Line 型錄 5600CT9101 (2018/03)，"
+        "請向原廠確認專案適用之最新資料"),
+    "w_bw_parallel": (
+        "{runs} parallel runs of {rating:g} A: equal length and impedance, "
+        "same construction - confirm with Schneider Electric and the AHJ",
+        "{runs} 路 {rating:g} A 並聯：須同長度、同阻抗、同構造，"
+        "請向施耐德電機及主管機關確認"),
+    "w_bw_no_high": (
+        "High short-circuit bracing is not offered at {rating:g} A in this "
+        "construction - standard bracing used",
+        "此構造之 {rating:g} A 無高短路耐受型，改用標準耐受"),
+    "w_bw_fitting150": (
+        "Certain I-Line fittings are UL rated 150 kA at this rating "
+        "(Table 1, note 1)",
+        "此額定部分 I-Line 配件之 UL 短路耐受為 150 kA (表 1 註 1)"),
+    "w_bw_harmonic_small": (
+        "Harmonic-rated I-Line is offered 800–5000 A only - 100 % neutral "
+        "used",
+        "諧波額定 I-Line 僅 800–5000 A 提供，改用 100 % 中性線"),
+    "w_bw_ground_std": (
+        "I-Line 800–5000 A includes a 50 % integral ground bus as standard",
+        "I-Line 800–5000 A 標準配備 50 % 內建接地匯流排"),
+    "w_bw_gg_small": (
+        "Copper ground bus (GG) is offered 800–5000 A only - aluminum "
+        "ground (G) used",
+        "銅接地匯流排 (GG) 僅 800–5000 A 提供，改用鋁接地 (G)"),
+    "w_bw_1ph_catalog": (
+        "Single-phase I-Line: confirm the catalog number with Schneider "
+        "Electric",
+        "單相 I-Line：型號請向施耐德電機確認"),
     "w_bw_fault_unknown": (
         "Available fault current not entered - busway SCCR not checked",
         "未輸入可用故障電流，未檢核匯流排槽短路耐受"),
-    "err_busway_phase": ("Busway sizing applies to 3-phase systems",
-                         "匯流排槽選定僅適用於三相系統"),
     "err_busway_voltage": (
-        "Busway sizing covers systems ≤ 1000 V ({volts:g} V given)",
-        "匯流排槽選定適用 ≤ 1000 V 系統 (輸入 {volts:g} V)"),
-    "err_busway_range": ("No standard busway rating covers {amps} A",
-                         "無標準匯流排槽額定可滿足 {amps} A"),
+        "I-Line busway is rated 600 V ({volts:g} V given)",
+        "I-Line 匯流排槽額定 600 V (輸入 {volts:g} V)"),
+    "err_busway_data": (
+        "No I-Line data for {rating:g} A in this construction - enter R, X "
+        "and SCCR",
+        "此構造無 {rating:g} A 之 I-Line 資料，請輸入 R、X 及短路耐受"),
+    "err_busway_range": ("No I-Line busway (up to 2 parallel runs) covers "
+                         "{amps} A",
+                         "I-Line 匯流排槽 (最多 2 路並聯) 無法滿足 {amps} A"),
 
     # ---------------- errors ----------------
     "err_ambient": ("Ambient {ambient} °C not permitted for {temp} °C "

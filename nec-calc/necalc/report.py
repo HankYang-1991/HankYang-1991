@@ -28,6 +28,7 @@ SUMMARY_FIELDS = {
                 ("wire_text", "s_wire", "{}"),
                 ("busway_text", "s_busway", "{}"),
                 ("ampacity", "s_ampacity", "{:.1f} A"),
+                ("bw_label", "s_bw_label", "{}"),
                 ("bw_ampacity", "s_bw_ampacity", "{:.0f} A"),
                 ("sccr_ka", "s_sccr", "{:g} kA"),
                 ("vd_pct", "s_vd", "{:.2f} %")],

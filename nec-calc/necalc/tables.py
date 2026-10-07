@@ -434,20 +434,78 @@ MV_3C_OD_FACTOR = 2.155
 MV_3C_JACKET_IN = 0.20
 
 # ---------------------------------------------------------------------------
-# Busway (Article 368, UL 857).  Ratings are at 40 C ambient (UL 857).
-# Impedance and short-circuit ratings are TYPICAL for low-impedance
-# (sandwich) feeder busway - replace with the manufacturer's data.
+# Busway (Article 368, UL 857) - Schneider Electric / Square D I-Line
+# Source: Busway Systems Catalog 5600CT9101 R03/18 (03/2018), Section 6.
+# Ratings are 55 C rise over 40 C ambient.  Neutrals are 100 % capacity.
 # ---------------------------------------------------------------------------
-BUSWAY_RATINGS = [225, 400, 600, 800, 1000, 1200, 1350, 1600, 2000, 2500,
-                  3000, 4000, 5000, 6000]
-BUSWAY_PLUGIN_MAX = 5000        # plug-in busway lines typically stop here
-BUSWAY_COMMON_MAX = 5000        # many UL 857 lines stop at 5000 A
+BUSWAY_SOURCE = "Schneider Electric I-Line, catalog 5600CT9101 (03/2018)"
 BUSWAY_AMBIENT_BASE = 40.0      # C, UL 857 rating ambient
 BUSWAY_HOTSPOT = 95.0           # C, 40 C ambient + 55 C rise
-# R (milliohm per 100 ft, line-to-neutral) ~= K / rating (TYPICAL)
-BUSWAY_R_K = {"cu": 950.0, "al": 1000.0}
-BUSWAY_X_RATIO = 0.35           # X / R, sandwich construction (TYPICAL)
-# Short-circuit current rating, kA symmetrical (TYPICAL standard ratings)
-BUSWAY_SCCR_TYPICAL = {225: 22, 400: 42, 600: 42, 800: 65, 1000: 75,
-                       1200: 85, 1350: 85, 1600: 100, 2000: 100, 2500: 100,
-                       3000: 100, 4000: 150, 5000: 150, 6000: 200}
+BUSWAY_MAX_VOLTS = 600.0        # I-Line: 600 V ac/dc
+BUSWAY_MAX_RUNS = 2             # parallel runs considered when one is short
+
+# Table 5 - impedance, line-to-neutral, milliohm per 100 ft, at 80 C:
+# rating: (R, X 60 Hz, X 50 Hz)
+ILINE_IMPEDANCE = {
+    "al": {225: (7.30, 3.42, 2.85), 400: (3.71, 2.60, 2.17),
+           600: (2.04, 1.59, 1.32), 800: (2.67, 0.91, 0.76),
+           1000: (2.15, 0.74, 0.62), 1200: (1.62, 0.60, 0.50),
+           1350: (1.36, 0.53, 0.44), 1600: (1.20, 0.50, 0.42),
+           2000: (0.99, 0.41, 0.34), 2500: (0.85, 0.35, 0.29),
+           3000: (0.61, 0.26, 0.22), 4000: (0.44, 0.15, 0.13)},
+    "cu": {225: (4.06, 3.75, 3.12), 400: (2.13, 2.30, 1.92),
+           600: (2.13, 2.30, 1.92), 800: (1.86, 1.10, 0.92),
+           1000: (1.92, 1.07, 0.89), 1200: (1.52, 0.92, 0.76),
+           1350: (1.17, 0.75, 0.62), 1600: (1.04, 0.69, 0.58),
+           2000: (0.84, 0.54, 0.44), 2500: (0.60, 0.42, 0.35),
+           3000: (0.53, 0.37, 0.31), 3200: (0.48, 0.32, 0.27),
+           4000: (0.39, 0.23, 0.19), 5000: (0.28, 0.19, 0.15)},
+}
+
+# Table 1 - short-circuit rating, UL 3-cycle test, kA RMS symmetrical.
+# (material, busway type, bracing): {rating: kA}.  A rating missing from a
+# table is not offered in that construction.
+ILINE_SCCR = {
+    ("al", "bw_feeder", "std"): {800: 50, 1000: 50, 1200: 50, 1350: 50,
+                                 1600: 50, 2000: 100, 2500: 100, 3000: 100,
+                                 4000: 150},
+    ("al", "bw_feeder", "high"): {800: 85, 1000: 100, 1200: 100, 1350: 100,
+                                  1600: 100, 2000: 150, 2500: 150,
+                                  3000: 150, 4000: 200},
+    ("al", "bw_plugin", "std"): {225: 22, 400: 22, 600: 22, 800: 50,
+                                 1000: 50, 1200: 50, 1350: 50, 1600: 50,
+                                 2000: 125, 2500: 125, 3000: 125, 4000: 200},
+    ("al", "bw_plugin", "high"): {400: 42, 600: 42, 800: 75, 1000: 100,
+                                  1200: 100, 1350: 100, 1600: 100,
+                                  2000: 150, 2500: 150, 3000: 150},
+    ("cu", "bw_feeder", "std"): {800: 50, 1000: 50, 1200: 50, 1350: 50,
+                                 1600: 50, 2000: 50, 2500: 100, 3000: 100,
+                                 3200: 100, 4000: 150, 5000: 150},
+    ("cu", "bw_feeder", "high"): {800: 85, 1000: 85, 1200: 100, 1350: 100,
+                                  1600: 100, 2000: 100, 2500: 150,
+                                  3000: 150, 3200: 150, 4000: 200,
+                                  5000: 200},
+    ("cu", "bw_plugin", "std"): {225: 22, 400: 22, 600: 22, 800: 50,
+                                 1000: 50, 1200: 50, 1350: 50, 1600: 50,
+                                 2000: 65, 2500: 125, 3000: 125, 3200: 125,
+                                 4000: 200, 5000: 200},
+    ("cu", "bw_plugin", "high"): {400: 42, 600: 42, 800: 75, 1000: 75,
+                                  1200: 100, 1350: 100, 1600: 100,
+                                  2000: 100, 2500: 150, 3000: 150,
+                                  3200: 150},
+}
+# Table 1 note 1: certain fittings are UL rated 150 kA at these ratings
+ILINE_SCCR_FITTING_150 = {("al", "bw_feeder", "high"): [4000],
+                          ("cu", "bw_feeder", "high"): [4000, 5000]}
+
+# Table 6 - aluminum integral ground bus, DC milliohm per 100 ft at 80 C,
+# by phase-conductor material
+ILINE_GROUND_R = {
+    "al": {225: 8.1, 400: 6.4, 600: 5.3, 800: 4.0, 1000: 3.5, 1200: 3.2,
+           1350: 3.0, 1600: 2.8, 2000: 2.2, 2500: 2.0, 3000: 1.8,
+           4000: 1.7},
+    "cu": {225: 8.1, 400: 6.4, 600: 6.4, 800: 4.4, 1000: 4.0, 1200: 3.5,
+           1350: 3.4, 1600: 3.0, 2000: 3.0, 2500: 2.2, 3000: 2.0, 3200: 1.7,
+           4000: 1.7, 5000: 1.7},
+}
+ILINE_LARGE_MIN = 800           # I-Line II 800-5000 A construction

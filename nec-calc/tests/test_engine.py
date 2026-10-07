@@ -187,40 +187,69 @@ if __name__ == "__main__":
 
 
 class BuswayTests(unittest.TestCase):
+    """Schneider Electric I-Line data (catalog 5600CT9101, 03/2018)."""
+
     def _w(self, **kw):
         d = dict(voltage=480, wiring="3ph4w", method="busway", length_ft=50,
                  pf=0.9)
         d.update(kw)
         return E.WiringInput(**d)
 
+    def test_voltage_drop_matches_catalog_tables(self):
+        # Table 8: Al 1000 A, 50 % PF -> 2.97 V per 100 ft at rated load
+        vd, _ = E.busway_vd(1000, 1000, self._w(material="al", pf=0.5,
+                                                length_ft=100))
+        self.assertAlmostEqual(vd, 2.97, places=2)
+        # Table 9: Cu 4000 A, 90 % PF -> 3.15 V (R/X rounding: +-0.05)
+        vd, _ = E.busway_vd(4000, 4000, self._w(pf=0.9, length_ft=100))
+        self.assertAlmostEqual(vd, 3.15, delta=0.05)
+        # distributed load: divide by 2
+        vd2, _ = E.busway_vd(4000, 4000, self._w(pf=0.9, length_ft=100,
+                                                 bw_load="distributed"))
+        self.assertAlmostEqual(vd2, vd / 2)
+
     def test_transformer_secondaries(self):
-        # 125 % of secondary FLA -> OCPD -> busway rated >= OCPD (> 800 A)
-        for kva, ocpd, bus in ((1500, 2500, 2500), (2500, 4000, 4000),
-                               (3000, 5000, 5000)):
+        for kva, ocpd, bus, sccr in ((1500, 2500, 2500, 100),
+                                     (2500, 4000, 4000, 150),
+                                     (3000, 5000, 5000, 150)):
             x = E.TransformerInput(kva=kva, pri_v=24900, sec_v=480,
                                    z_pct=5.75)
             r = E.design_transformer(x, sec_wiring=self._w())
             s = r.children["secondary"].summary
             self.assertEqual(r.summary["sec_ocpd"], ocpd)
             self.assertEqual(s["bw_rating"], bus)
-            # SCCR checked against the transformer's infinite-bus fault
-            sccr = [st for st in r.children["secondary"].steps
-                    if st.key == "st_bw_sccr"][0]
-            self.assertTrue(sccr.ok)
+            self.assertEqual(s["sccr_ka"], sccr)          # CF2 standard
+            ok = [st for st in r.children["secondary"].steps
+                  if st.key == "st_bw_sccr"][0]
+            self.assertTrue(ok.ok)
 
-    def test_6000a(self):
+    def test_6000a_uses_two_runs(self):
         r = E.design_general(0, self._w(), load_amps=4700)   # 5875 A design
         self.assertEqual(r.summary["ocpd"], 6000)
-        self.assertEqual(r.summary["bw_rating"], 6000)
-        self.assertIn("w_bw_large", [k for k, _ in r.warnings])
+        self.assertEqual(r.summary["bw_runs"], 2)
+        self.assertEqual(r.summary["bw_rating"], 3000)
+        self.assertIn("w_bw_parallel", [k for k, _ in r.warnings])
 
     def test_368_17_a_next_size_up(self):
-        # <= 800 A: next standard OCPD above the busway rating is allowed
-        r = E.size_busway(580, 500, 600, self._w())
+        r = E.size_busway(580, 500, 600, self._w(bw_type="bw_plugin"))
         self.assertEqual(r.summary["bw_rating"], 600)
-        # > 800 A: OCPD may not exceed the busway rating (1350 A on 1600 A)
+        # feeder construction starts at 800 A
+        r = E.size_busway(580, 500, 600, self._w())
+        self.assertEqual(r.summary["bw_rating"], 800)
+        # > 800 A: OCPD may not exceed the busway (no 1350 A on 1600 A)
         r = E.size_busway(1300, 1100, 1600, self._w())
         self.assertEqual(r.summary["bw_rating"], 1600)
+
+    def test_auto_bracing_and_catalog(self):
+        r = E.size_busway(1900, 1500, 2000, self._w(fault_ka=80))
+        self.assertEqual(r.summary["sccr_ka"], 100)       # CFH2 2000 A
+        self.assertEqual(r.summary["bw_catalog"], "CFH2520G")
+        r = E.size_busway(1100, 1000, 1200, self._w(
+            material="al", bw_type="bw_plugin", bw_neutral="harm_y"))
+        self.assertEqual(r.summary["bw_catalog"], "APY2512G")  # catalog ex.
+        r = E.size_busway(700, 600, 800, self._w(fault_ka=100))
+        st = [s for s in r.steps if s.key == "st_bw_sccr"][0]
+        self.assertFalse(st.ok)                   # 800 A max 85 kA (CFH2)
 
     def test_ambient_derating(self):
         r = E.size_busway(2000, 1600, 2000, self._w(ambient_c=50))
@@ -228,20 +257,18 @@ class BuswayTests(unittest.TestCase):
                                2500 * math.sqrt(45 / 55))
         self.assertEqual(r.summary["bw_rating"], 2500)
 
-    def test_distributed_load_halves_vd(self):
-        a = E.size_busway(1000, 1000, 1000, self._w(length_ft=300))
-        b = E.size_busway(1000, 1000, 1000,
-                          self._w(length_ft=300, bw_load="distributed"))
-        self.assertAlmostEqual(b.summary["vd_pct"], a.summary["vd_pct"] / 2)
-
-    def test_sccr_fail_and_plugin_limit(self):
-        r = E.size_busway(700, 600, 800, self._w(fault_ka=100))
-        st = [s for s in r.steps if s.key == "st_bw_sccr"][0]
-        self.assertFalse(st.ok)                     # 800 A typical 65 kA
-        with self.assertRaises(E.CalcError):
-            E.size_busway(5500, 5000, 6000, self._w(bw_type="bw_plugin"))
-
-    def test_single_phase_rejected(self):
+    def test_limits(self):
         with self.assertRaises(E.CalcError) as cm:
-            E.design_general(10000, self._w(voltage=240, wiring="1ph3w"))
-        self.assertEqual(cm.exception.key, "err_busway_phase")
+            E.size_busway(12000, 9000, None, self._w())
+        self.assertEqual(cm.exception.key, "err_busway_range")
+        with self.assertRaises(E.CalcError) as cm:
+            E.size_busway(1000, 900, 1000, self._w(voltage=4160))
+        self.assertEqual(cm.exception.key, "err_busway_voltage")
+        with self.assertRaises(E.CalcError) as cm:
+            E.size_busway(1000, 900, 1000, self._w(bw_rating=2200))
+        self.assertEqual(cm.exception.key, "err_busway_data")
+
+    def test_single_phase(self):
+        r = E.design_general(30000, self._w(voltage=240, wiring="1ph3w"))
+        self.assertEqual(r.summary["method"], "busway")
+        self.assertIn("w_bw_1ph_catalog", [k for k, _ in r.warnings])

@@ -251,8 +251,8 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     return Object.assign({ voltage: "208", wiring: "3ph4w", mat: "cu", ins: "THHN", term: "75",
       conduit: "EMT", min: "12", len: "100", pf: "0.9", vd: "3", amb: "30", extra: "0",
       sets: "0", max: "500", nccc: false, method: "cable", bw_type: "bw_feeder", bw_neutral: "n100",
-      bw_ground: "g_int50", bw_load: "concentrated", bw_rating: "0", bw_r: "0", bw_x: "0",
-      bw_sccr: "0", fault: "0" }, o);
+      bw_ground: "g_int50", bw_bracing: "auto", bw_load: "concentrated", bw_rating: "0", bw_runs: "0",
+      bw_r: "0", bw_x: "0", bw_sccr: "0", fault: "0" }, o);
   }
   var EXAMPLE_LOADS = [
     { name: "Office lighting", category: "lighting", qty: 12, rating: 600, unit: "VA", pf: 0.95, voltage: 120, phases: 1, continuous: true },
@@ -302,6 +302,9 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
         });
       }
     } catch (e) { /* storage unavailable: start from defaults */ }
+    ["brw", "xfw", "lcw", "mow"].forEach(function (k) {
+      if (d[k].bw_neutral === "n200") d[k].bw_neutral = "harm_y";
+    });
     return d;
   }
   var S = loadState();
@@ -377,8 +380,9 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     if (opts.busway !== false) f.push(F(p + ".method", "method", "sel", { opts: ["cable", "busway"] }));
     f.push(F(p + ".mat", "material", "sel", { opts: ["cu", "al"] }));
     if (busway) f.push(F(p + ".bw_type", "bw_type", "sel", { opts: ["bw_feeder", "bw_plugin"] }),
-      F(p + ".bw_neutral", "bw_neutral", "sel", { opts: ["n100", "n200"] }),
-      F(p + ".bw_ground", "bw_ground", "sel", { opts: ["g_int50", "g_housing"] }),
+      F(p + ".bw_neutral", "bw_neutral", "sel", { opts: ["n100", "harm_x", "harm_y"] }),
+      F(p + ".bw_ground", "bw_ground", "sel", { opts: ["g_int50", "g_int50cu", "g_housing"] }),
+      F(p + ".bw_bracing", "bw_bracing", "sel", { opts: ["auto", "std", "high"] }),
       F(p + ".bw_load", "bw_load", "sel", { opts: ["concentrated", "distributed"] }));
     else f.push(F(p + ".ins", "insulation", "sel", { opts: ["THHN", "XHHW"] }),
       F(p + ".term", "term_temp", "sel", { opts: ["60", "75", "90"], lab: function (c) { return c + " °C"; } }),
@@ -387,7 +391,8 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     if (opts.pf !== false) f.push(F(p + ".pf", "pf", "num"));
     f.push(F(p + ".vd", "vd_limit", "num"), F(p + ".amb", "ambient", "num"));
     if (busway) f.push(F(p + ".fault", "bw_fault", "num"),
-      F(p + ".bw_rating", "bw_rating", "num", { list: ["0"].concat(T.BUSWAY_RATINGS.map(String)) }),
+      F(p + ".bw_rating", "bw_rating", "num", { list: ["0"].concat(N.buswayRatings("cu", "bw_plugin").map(String)) }),
+      F(p + ".bw_runs", "bw_runs", "num"),
       F(p + ".bw_r", "bw_r", "num"), F(p + ".bw_x", "bw_x", "num"), F(p + ".bw_sccr", "bw_sccr", "num"));
     else f.push(F(p + ".extra", "extra_ccc", "num"), F(p + ".sets", "sets", "num"),
       F(p + ".max", "max_size", "sel", { opts: ["250", "350", "500", "600", "750"], lab: sizeLab }),
@@ -408,6 +413,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       pf: w.pf === undefined ? 0.9 : num(w.pf, "pf"), vd_limit_pct: num(w.vd, "vd_limit"),
       conduit_type: w.conduit, min_size: w.min, edition: S.ed, method: w.method || "cable",
       bw_type: w.bw_type, bw_neutral: w.bw_neutral, bw_ground: w.bw_ground, bw_load: w.bw_load,
+      bw_bracing: w.bw_bracing || "auto", bw_runs: Math.trunc(num(w.bw_runs || "0", "bw_runs")),
       bw_rating: num(w.bw_rating || "0", "bw_rating"), bw_r: num(w.bw_r || "0", "bw_r"),
       bw_x: num(w.bw_x || "0", "bw_x"), bw_sccr: num(w.bw_sccr || "0", "bw_sccr"),
       fault_ka: num(w.fault || "0", "bw_fault") }, overrides || {}));
@@ -660,7 +666,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       '</b></div><div class="track ' + state + '"><i style="width:' + Math.min(ratio / scale, 1) * 100 + '%"></i><s style="left:' +
       (100 / scale) + '%"></s></div></div>';
   }
-  var BUSWAY_KEYS = [["ocpd", "s_ocpd", "{v} A"], ["bw_rating", "s_busway", "{v:g} A"], ["sccr_ka", "s_sccr", "{v:g} kA"]];
+  var BUSWAY_KEYS = [["ocpd", "s_ocpd", "{v} A"], ["bw_label", "s_bw_label", "{v}"], ["sccr_ka", "s_sccr", "{v:g} kA"]];
   function resultBody(res, key) {
     var s = res.summary, h = "";
     if (s.wire_text) h += '<div class="callout"><p class="eyebrow" style="margin:0 0 2px">' + esc(t(res.kind === "mv_cable" ? "s_mv_cable" : "s_wire")) +
@@ -673,6 +679,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       return '<div class="key"><div class="k">' + esc(t(k[1])) + '</div><div class="v' + (val.length > 8 ? " txt" : "") + '">' + esc(val) + "</div></div>";
     }).join("") + "</div>";
     var shown = {}; keys.forEach(function (k) { shown[k[0]] = 1; }); shown.wire_text = 1; shown.busway_text = 1;
+    if (s.method === "busway") shown.bw_label = 1;
     var rows = N.summaryRows(res, S.lang).filter(function (r) { return !shown[r[2]]; });
     if (rows.length) h += '<dl class="kv">' + rows.map(function (r) { return "<dt>" + esc(r[0]) + "</dt><dd>" + esc(r[1]) + "</dd>"; }).join("") + "</dl>";
     var m = "";

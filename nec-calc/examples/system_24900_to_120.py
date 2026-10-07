@@ -33,9 +33,10 @@ sec = E.WiringInput(wiring="3ph4w", length_ft=30, conduit_type="RMC",
                     max_size="600", vd_limit_pct=1.0, edition=ed)
 show("2500 kVA 24.9 kV - 480Y/277 V", E.design_transformer(x, sec, mv=mv))
 
-# 1b. Same transformer with a feeder busway to the switchboard (Art. 368)
+# 1b. Same transformer with Schneider I-Line plug-in busway (Art. 368)
 bus = E.WiringInput(wiring="3ph4w", length_ft=60, method="busway",
-                    bw_neutral="n200", vd_limit_pct=1.0, edition=ed)
+                    bw_type="bw_plugin", bw_neutral="harm_y",
+                    bw_ground="g_int50cu", vd_limit_pct=1.0, edition=ed)
 show("2500 kVA secondary busway", E.design_transformer(
     x, bus, mv=E.MVInput(**vars(mv))).children["secondary"])
 

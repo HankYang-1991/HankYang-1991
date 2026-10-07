@@ -243,13 +243,15 @@ class WiringInput:
     # ---- busway (method == "busway", Article 368) ----
     method: str = "cable"          # "cable" | "busway"
     bw_type: str = "bw_feeder"     # "bw_feeder" | "bw_plugin"
-    bw_neutral: str = "n100"       # "n100" | "n200" (4-wire systems)
-    bw_ground: str = "g_int50"     # "g_int50" | "g_housing"
+    bw_neutral: str = "n100"       # "n100" | "harm_x" | "harm_y"
+    bw_ground: str = "g_int50"     # "g_int50" | "g_int50cu" | "g_housing"
+    bw_bracing: str = "auto"       # "auto" | "std" | "high"
     bw_load: str = "concentrated"  # "concentrated" | "distributed"
     bw_rating: float = 0.0         # 0 = auto-select
-    bw_r: float = 0.0              # milliohm / 100 ft L-N, 0 = typical
-    bw_x: float = 0.0              # milliohm / 100 ft L-N, 0 = typical
-    bw_sccr: float = 0.0           # kA, 0 = typical
+    bw_runs: int = 0               # parallel runs, 0 = auto (1 or 2)
+    bw_r: float = 0.0              # milliohm / 100 ft L-N, 0 = I-Line data
+    bw_x: float = 0.0              # milliohm / 100 ft L-N, 0 = I-Line data
+    bw_sccr: float = 0.0           # kA, 0 = I-Line data
     fault_ka: float = 0.0          # available fault current, 0 = unknown
 
 
@@ -468,51 +470,77 @@ def busway_derate(ambient_c):
                      (T.BUSWAY_HOTSPOT - T.BUSWAY_AMBIENT_BASE))
 
 
+def busway_ratings(material, bw_type):
+    """I-Line ratings offered for this material and busway type."""
+    return sorted(T.ILINE_SCCR[(material, bw_type, "std")])
+
+
 def busway_impedance(rating, w):
-    """(R, X) in milliohm per 100 ft, line-to-neutral."""
-    r = w.bw_r or T.BUSWAY_R_K[w.material] / rating
-    x = w.bw_x or r * T.BUSWAY_X_RATIO
+    """(R, X) in milliohm per 100 ft, line-to-neutral, 60 Hz, 80 C."""
+    row = T.ILINE_IMPEDANCE[w.material].get(rating)
+    r = w.bw_r or (row[0] if row else 0.0)
+    x = w.bw_x or (row[1] if row else 0.0)
+    if not r:
+        raise CalcError("err_busway_data", rating=rating)
     return r, x
 
 
-def busway_sccr(rating, w):
+def busway_sccr(rating, w, bracing):
     if w.bw_sccr:
         return w.bw_sccr
-    keys = [k for k in T.BUSWAY_SCCR_TYPICAL if k <= rating]
-    return T.BUSWAY_SCCR_TYPICAL[max(keys) if keys
-                                 else min(T.BUSWAY_SCCR_TYPICAL)]
+    return T.ILINE_SCCR[(w.material, w.bw_type, bracing)].get(rating)
 
 
-def busway_vd(i, rating, w):
+def busway_vd(i, rating, w, runs=1):
+    """Voltage drop (V, %) per I-Line Section 6: sqrt(3) I (R cos + X sin)
+    for 3-phase, x 1.15 of that for single-phase, / 2 if distributed."""
     r, x = busway_impedance(rating, w)
     pf = max(min(w.pf, 1.0), 0.0)
     z = r * pf + x * math.sqrt(1 - pf * pf)
+    k = SQRT3 if WIRING[w.wiring][0] == 3 else SQRT3 * 1.15
     dist = 0.5 if w.bw_load == "distributed" else 1.0
-    vd = SQRT3 * i * z / 1000.0 * w.length_ft / 100.0 * dist
+    vd = k * (i / runs) * z / 1000.0 * w.length_ft / 100.0 * dist
     return vd, 100.0 * vd / w.voltage
 
 
+def busway_catalog(rating, w, high, neutral, ground):
+    """I-Line catalog prefix (Fig. 34 for 225-600 A, Fig. 60 for 800 A+)."""
+    phases, _, has_neutral = WIRING[w.wiring]
+    if phases != 3:
+        return None
+    mat = "A" if w.material == "al" else "C"
+    poles = 5 if has_neutral else 3
+    amps = int(rating // 100)
+    if rating < T.ILINE_LARGE_MIN:
+        return (f"{mat}P{'H' if high else ''}-{poles}{amps:02d}"
+                f"{'G' if ground != 'g_housing' else ''}")
+    kind = "P" if w.bw_type == "bw_plugin" else "F"
+    harm = {"harm_x": "X", "harm_y": "Y"}.get(neutral, "")
+    gnd = "GG" if ground == "g_int50cu" else "G"
+    # catalog examples: AP2512G, APY2512G, AF2530G, CF2312G
+    return f"{mat}{kind}{'H' if high else ''}{harm}2{poles}{amps}{gnd}"
+
+
 def size_busway(i_design, i_load, ocpd, w: WiringInput, res=None):
-    """Select a busway rating instead of cables (Article 368)."""
+    """Select an I-Line busway instead of cables (Article 368)."""
     ed = w.edition
     res = res or Result("conductors")
     phases, _, has_neutral = WIRING[w.wiring]
-    if phases != 3:
-        raise CalcError("err_busway_phase")
-    if w.voltage > 1000:
+    if w.voltage > T.BUSWAY_MAX_VOLTS:
         raise CalcError("err_busway_voltage", volts=w.voltage)
     f = busway_derate(w.ambient_c)
     res.add("st_bw_derate", ref("busway_rating", ed), ambient=w.ambient_c,
             factor=f)
-    plugin = w.bw_type == "bw_plugin"
+    ratings = busway_ratings(w.material, w.bw_type)
     if w.bw_rating:
+        if w.bw_rating not in ratings and not (w.bw_r and w.bw_sccr):
+            raise CalcError("err_busway_data", rating=w.bw_rating)
         ratings = [w.bw_rating]
-    else:
-        ratings = [r for r in T.BUSWAY_RATINGS
-                   if not plugin or r <= T.BUSWAY_PLUGIN_MAX]
+    runs_list = [w.bw_runs] if w.bw_runs > 0 else \
+        list(range(1, T.BUSWAY_MAX_RUNS + 1))
 
-    def checks(r):
-        a = r * f
+    def checks(r, n):
+        a = r * f * n
         ok_d = a >= i_design - 1e-9
         ok_p = True
         if ocpd:
@@ -521,80 +549,139 @@ def size_busway(i_design, i_load, ocpd, w: WiringInput, res=None):
                                          and nxt >= ocpd)
         return ok_d, ok_p
 
-    chosen = next((r for r in ratings if all(checks(r))), None)
+    chosen = None
+    for n in runs_list:
+        r = next((r for r in ratings if all(checks(r, n))), None)
+        if r is not None:
+            chosen = (r, n)
+            break
     if chosen is None:
         if not w.bw_rating:
             raise CalcError("err_busway_range",
                             amps=round(max(i_design, ocpd or 0), 1))
-        chosen = w.bw_rating
-    ok_d, ok_p = checks(chosen)
-    res.add("st_bw_select", ref("busway_rating", ed), ok=ok_d,
-            rating=chosen, factor=f, amps=chosen * f, need=i_design)
+        chosen = (w.bw_rating, runs_list[-1])
+    rating, runs = chosen
+    ok_d, ok_p = checks(rating, runs)
+    res.add("st_bw_select", ref("busway_rating", ed), ok=ok_d, runs=runs,
+            rating=rating, factor=f, amps=rating * f * runs, need=i_design)
     if ocpd:
         res.add("st_bw_ocpd", ref("busway_ocpd", ed), ok=ok_p, ocpd=ocpd,
-                amps=chosen * f)
+                amps=rating * f * runs)
 
     # ---- voltage drop / upsizing -------------------------------------
-    amp_rating = chosen
-    vd_v, vd_pct = busway_vd(i_load, chosen, w)
+    amp_rating = rating
+    vd_v, vd_pct = busway_vd(i_load, rating, w, runs)
     if w.vd_limit_pct and vd_pct > w.vd_limit_pct:
         fixed = bool(w.bw_rating or w.bw_r)
         better = None if fixed else next(
-            (r for r in ratings if r > chosen and
-             busway_vd(i_load, r, w)[1] <= w.vd_limit_pct), None)
+            (r for r in ratings if r > rating and
+             busway_vd(i_load, r, w, runs)[1] <= w.vd_limit_pct), None)
         if better:
-            chosen = better
-            vd_v, vd_pct = busway_vd(i_load, chosen, w)
+            rating = better
+            vd_v, vd_pct = busway_vd(i_load, rating, w, runs)
         else:
             res.warn("w_vd_not_met", limit=w.vd_limit_pct, pct=vd_pct)
-    r_m, x_m = busway_impedance(chosen, w)
-    res.add("st_bw_vd", ref("busway_vd", ed) + "; " + ref("vd_note", ed),
+    r_m, x_m = busway_impedance(rating, w)
+    user_z = bool(w.bw_r or w.bw_x)
+    res.add("st_bw_vd", ref("busway_vd_user" if user_z else "busway_vd", ed)
+            + "; " + ref("vd_note", ed),
             ok=(not w.vd_limit_pct) or vd_pct <= w.vd_limit_pct + 1e-9,
-            amps=i_load, length=w.length_ft, r=r_m, x=x_m, load=w.bw_load,
-            volts=vd_v, pct=vd_pct, limit=w.vd_limit_pct)
-    if chosen != amp_rating:
+            amps=i_load / runs, length=w.length_ft, r=r_m, x=x_m,
+            load=w.bw_load, volts=vd_v, pct=vd_pct, limit=w.vd_limit_pct)
+    if rating != amp_rating:
         res.add("st_bw_upsize", ref("vd_note", ed), old=amp_rating,
-                new=chosen)
+                new=rating)
+    if runs > 1:
+        res.warn("w_bw_parallel", runs=runs, rating=rating)
 
-    # ---- short-circuit rating ----------------------------------------
-    sccr = busway_sccr(chosen, w)
+    # ---- short-circuit rating and bracing ----------------------------
+    std = busway_sccr(rating, w, "std")
+    high_ok = rating in T.ILINE_SCCR[(w.material, w.bw_type, "high")]
+    if w.bw_bracing == "high" and high_ok:
+        bracing = "high"
+    elif w.bw_bracing == "auto" and high_ok and w.fault_ka and \
+            std is not None and std < w.fault_ka - 1e-9:
+        bracing = "high"
+    else:
+        bracing = "std"
+    if w.bw_bracing == "high" and not high_ok:
+        res.warn("w_bw_no_high", rating=rating)
+    sccr = busway_sccr(rating, w, bracing)
+    br_code = "br_" + bracing
     if w.fault_ka:
         res.add("st_bw_sccr", ref("busway_sccr", ed),
-                ok=sccr >= w.fault_ka - 1e-9, sccr=sccr, fault=w.fault_ka)
+                ok=sccr >= w.fault_ka - 1e-9, sccr=sccr, bracing=br_code,
+                fault=w.fault_ka)
     else:
-        res.add("st_bw_sccr_info", ref("busway_sccr", ed), sccr=sccr)
+        res.add("st_bw_sccr_info", ref("busway_sccr", ed), sccr=sccr,
+                bracing=br_code)
         res.warn("w_bw_fault_unknown")
+    if not w.bw_sccr and rating in T.ILINE_SCCR_FITTING_150.get(
+            (w.material, w.bw_type, bracing), []):
+        res.warn("w_bw_fitting150")
 
+    # ---- neutral, ground, catalog number -----------------------------
+    large = rating >= T.ILINE_LARGE_MIN
     neutral = w.bw_neutral if has_neutral else "n0"
-    res.add("st_bw_ground", ref("busway_ground", ed), neutral=neutral,
-            ground=w.bw_ground)
+    if neutral in ("harm_x", "harm_y") and not large:
+        res.warn("w_bw_harmonic_small")
+        neutral = "n100"
+    ground = w.bw_ground
+    if ground == "g_housing" and large:
+        res.warn("w_bw_ground_std")
+        ground = "g_int50"
+    if ground == "g_int50cu" and not large:
+        res.warn("w_bw_gg_small")
+        ground = "g_int50"
+    # Table 6 lists the aluminum (G) ground bus only
+    rg = T.ILINE_GROUND_R[w.material].get(rating) if ground == "g_int50" \
+        else None
+    if rg is None:
+        res.add("st_bw_ground_h", ref("busway_ground", ed), neutral=neutral,
+                ground=ground)
+    else:
+        res.add("st_bw_ground", ref("busway_ground", ed), neutral=neutral,
+                ground=ground, rg=rg)
+    cat = busway_catalog(rating, w, bracing == "high", neutral, ground)
+    if cat:
+        res.add("st_bw_catalog", ref("busway_catalog", ed), cat=cat)
+    else:
+        res.warn("w_bw_1ph_catalog")
     res.add("st_bw_install", ref("busway_install", ed))
     if not (w.bw_r and w.bw_x and w.bw_sccr):
-        res.warn("w_bw_typical")
-    if chosen > T.BUSWAY_COMMON_MAX:
-        res.warn("w_bw_large", rating=chosen)
+        res.warn("w_bw_data")
 
     mat = "CU" if w.material == "cu" else "AL"
-    text = (f"{chosen:g}A {'PLUG-IN' if plugin else 'FEEDER'} BUSWAY, "
-            f"{w.voltage:g}V 3PH {4 if has_neutral else 3}W"
-            + ({"n100": ", 100% N", "n200": ", 200% N"}.get(neutral, ""))
-            + (", 50% INT. GND" if w.bw_ground == "g_int50"
-               else ", HOUSING GND")
+    wires = (f"3PH {4 if has_neutral else 3}W" if phases == 3 else
+             f"1PH {3 if has_neutral else 2}W")
+    label = (f"{runs} x {rating:g} A" if runs > 1 else f"{rating:g} A")
+    text = ((f"({runs}) RUNS OF " if runs > 1 else "")
+            + f"{rating:g}A I-LINE "
+            + ("PLUG-IN" if w.bw_type == "bw_plugin" else "FEEDER")
+            + " BUSWAY" + (f" {cat}" if cat else "")
+            + f", {w.voltage:g}V {wires}"
+            + {"n100": ", 100% N", "harm_x": ", HARMONIC (X)",
+               "harm_y": ", HARMONIC (Y)"}.get(neutral, "")
+            + {"g_int50": ", 50% AL GND", "g_int50cu": ", 50% CU GND"}.get(
+                ground, ", HOUSING GND")
             + f", {mat}, {sccr:g}kA SCCR")
     res.summary.update({
         "method": "busway",
-        "sets": 1,
+        "sets": runs,
         "size": "-",
-        "size_label": f"{chosen:g} A busway",
+        "size_label": label + " busway",
         "ampacity": None,
-        "bw_ampacity": chosen * f,
+        "bw_ampacity": rating * f * runs,
         "neutral": "-",
         "egc": "-",
         "conduit": "-",
         "vd_pct": vd_pct,
         "vd_v": vd_v,
         "busway_text": text,
-        "bw_rating": chosen,
+        "bw_rating": rating,
+        "bw_runs": runs,
+        "bw_label": label,
+        "bw_catalog": cat,
         "sccr_ka": sccr,
     })
     return res
