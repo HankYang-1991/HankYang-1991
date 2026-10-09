@@ -53,6 +53,14 @@ SUMMARY_FIELDS = {
                  ("sc_cmil", "s_sc_cmil", "{:,.0f} cmil"),
                  ("jam", "s_jam", "{:.2f}")],
 }
+SUMMARY_FIELDS["shortcircuit"] = [("max_fault_ka", "s_sc_max", "{:.1f} kA"),
+                                  ("bus_count", "s_sc_buses", "{}")]
+SUMMARY_FIELDS["harmonics"] = [("tdd", "s_h_tdd", "{:.2f} %"),
+                               ("tdd_limit", "s_h_tdd_lim", "{:g} %"),
+                               ("vthd", "s_h_vthd", "{:.2f} %"),
+                               ("ratio", "s_h_ratio", "{:.0f}"),
+                               ("k_factor", "s_h_k", "{:.2f}"),
+                               ("ahf_text", "s_h_ahf", "{}")]
 SUMMARY_FIELDS["tray"] = [("tray_text", "s_tray", "{}"),
                           ("req_width", "s_req_width", "{:.2f} in"),
                           ("fill_pct", "s_tray_fill", "{:.0f} %")]

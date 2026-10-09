@@ -68,6 +68,20 @@ _BASE = {
     "busway_catalog": "I-Line 5600CT9101 Fig. 34 / Fig. 60",
     "busway_ground": "368.60, 250.118",
     "busway_install": "368.10, 368.12, 368.17(C), 368.30",
+    "sc_source": "110.9, 110.10",
+    "sc_xfmr": "IEEE 141 / 399 ohmic method",
+    "sc_cable": "Chapter 9, Table 9 (R at 25 °C)",
+    "sc_busway": "I-Line 5600CT9101 Table 5 (R at 25 °C)",
+    "sc_bus": "110.9, 110.10",
+    "sc_device": "110.9; IEEE 1015 (test X/R)",
+    "sc_label": "110.24",
+    "sc_series": "240.86",
+    "h_drive": "Typical spectra / manufacturer data",
+    "h_limits": "IEEE 519-2022 Table 2",
+    "h_vlimits": "IEEE 519-2022 Table 1",
+    "h_kfactor": "IEEE C57.110, UL 1561",
+    "h_mitigation": "IEEE 519-2022",
+    "h_ahf": "AccuSine PCS+ frame ratings (typical)",
 }
 
 _2026_OVERRIDES = {

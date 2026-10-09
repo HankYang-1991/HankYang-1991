@@ -509,3 +509,65 @@ ILINE_GROUND_R = {
            4000: 1.7, 5000: 1.7},
 }
 ILINE_LARGE_MIN = 800           # I-Line II 800-5000 A construction
+
+# ---------------------------------------------------------------------------
+# Short-circuit / interrupting rating (NEC 110.9, 110.10, 110.24)
+# ---------------------------------------------------------------------------
+AIC_RATINGS = [10, 14, 18, 22, 25, 35, 42, 50, 65, 85, 100, 125, 150, 200]
+SC_DEVICES = ("mccb", "iccb", "lvpcb", "fuse")
+# Test X/R of the interrupting-rating test circuit (IEEE Std 1015):
+# MCCB/ICCB (UL 489): PF 50 % <= 10 kA, 30 % 10-20 kA, 20 % > 20 kA;
+# LVPCB unfused (UL 1066 / C37.13): PF 15 %; fuses (UL 248): PF 20 %
+SC_TEST_XR = {"pf50": 1.73, "pf30": 3.18, "pf20": 4.90, "pf15": 6.59}
+SC_MOTOR_MULT = 4.0                 # induction-motor contribution x FLC
+SC_Z_TOLERANCE = 0.90               # -10 % transformer impedance tolerance
+SC_COND_T0 = {"cu": 234.5, "al": 228.1}   # inferred zero-resistance temp
+SC_COND_TEMP = 25.0                 # C, resistance basis for max fault
+
+# ---------------------------------------------------------------------------
+# Harmonics - VFD front ends (IEEE 519-2022)
+# Spectra are TYPICAL % of fundamental input current at full load,
+# representative of published data; replace with manufacturer data.
+# ---------------------------------------------------------------------------
+HARM_ORDERS = [5, 7, 11, 13, 17, 19, 23, 25, 29, 31, 35, 37]
+HARM_SPECTRA = {
+    "6p": {5: 63.0, 7: 54.0, 11: 10.0, 13: 6.1, 17: 6.7, 19: 4.8, 23: 2.5,
+           25: 2.1, 29: 1.5, 31: 1.2, 35: 0.8, 37: 0.7},
+    "6p_ac3": {5: 35.0, 7: 13.0, 11: 7.5, 13: 4.5, 17: 3.5, 19: 2.5,
+               23: 1.5, 25: 1.2, 29: 0.9, 31: 0.8, 35: 0.6, 37: 0.5},
+    "6p_ac5": {5: 30.0, 7: 10.0, 11: 6.5, 13: 4.0, 17: 3.0, 19: 2.0,
+               23: 1.3, 25: 1.0, 29: 0.8, 31: 0.7, 35: 0.5, 37: 0.4},
+    "6p_dc": {5: 33.0, 7: 12.0, 11: 7.0, 13: 4.5, 17: 3.3, 19: 2.4, 23: 1.5,
+              25: 1.2, 29: 0.9, 31: 0.8, 35: 0.6, 37: 0.5},
+    "12p": {5: 2.5, 7: 1.5, 11: 7.0, 13: 4.5, 17: 0.8, 19: 0.6, 23: 1.5,
+            25: 1.2, 29: 0.3, 31: 0.3, 35: 0.6, 37: 0.5},
+    "18p": {5: 1.5, 7: 1.0, 11: 1.0, 13: 0.8, 17: 2.5, 19: 2.0, 23: 0.5,
+            25: 0.4, 29: 0.2, 31: 0.2, 35: 0.6, 37: 0.5},
+    "afe": {5: 1.5, 7: 1.2, 11: 1.0, 13: 0.8, 17: 0.6, 19: 0.5, 23: 0.4,
+            25: 0.3, 29: 0.2, 31: 0.2, 35: 0.1, 37: 0.1},
+    "6p_passive": {5: 3.5, 7: 2.5, 11: 2.0, 13: 1.5, 17: 1.0, 19: 0.8,
+                   23: 0.5, 25: 0.4, 29: 0.3, 31: 0.3, 35: 0.2, 37: 0.2},
+}
+HARM_DRIVE_TYPES = list(HARM_SPECTRA)
+HARM_DPF = {"6p": 0.97, "6p_ac3": 0.97, "6p_ac5": 0.97, "6p_dc": 0.97,
+            "12p": 0.98, "18p": 0.98, "afe": 1.0, "6p_passive": 0.98}
+HARM_DRIVE_EFF = 0.92               # motor x drive efficiency (TYPICAL)
+
+# IEEE 519-2022 Table 2, 120 V - 69 kV: (Isc/IL upper bound,
+# [limit 3<=h<11, 11<=h<17, 17<=h<23, 23<=h<35, 35<=h<=50], TDD)
+IEEE519_I_LIMITS = [
+    (20, [4.0, 2.0, 1.5, 0.6, 0.3], 5.0),
+    (50, [7.0, 3.5, 2.5, 1.0, 0.5], 8.0),
+    (100, [10.0, 4.5, 4.0, 1.5, 0.7], 12.0),
+    (1000, [12.0, 5.5, 5.0, 2.0, 1.0], 15.0),
+    (10 ** 12, [15.0, 7.0, 6.0, 2.5, 1.4], 20.0),
+]
+IEEE519_H_BANDS = [3, 11, 17, 23, 35, 51]
+# IEEE 519-2022 Table 1: (bus kV upper bound, individual %, THD %)
+IEEE519_V_LIMITS = [(1.0, 5.0, 8.0), (69.0, 3.0, 5.0), (161.0, 1.5, 2.5),
+                    (10 ** 6, 1.0, 1.5)]
+K_RATINGS = [1, 4, 9, 13, 20, 30, 40, 50]
+# Active harmonic filter frame ratings, A (Schneider AccuSine PCS+,
+# 380-480 V - TYPICAL, confirm with the manufacturer)
+AHF_SIZES = [60, 120, 200, 300]
+AHF_TARGET = 0.90                   # design to 90 % of the IEEE 519 limits

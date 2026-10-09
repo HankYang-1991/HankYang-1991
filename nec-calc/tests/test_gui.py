@@ -27,7 +27,9 @@ class GuiSmokeTest(unittest.TestCase):
                 app.calc_mv()
                 app.calc_tray()
                 app.calc_feeder()
-                for key in ("br", "mo", "xf", "mv", "tr", "lc"):
+                app.calc_sc()
+                app.calc_harm()
+                for key in ("br", "mo", "xf", "mv", "tr", "lc", "sc", "hm"):
                     self.assertIn(key, app.results, (lang, key))
                 app.v["br.w.method"].set("busway")
                 app.v["br.w.wiring"].set("3ph4w")

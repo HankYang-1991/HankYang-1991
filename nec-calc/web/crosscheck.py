@@ -294,8 +294,60 @@ def case_format(rng):
     return "format", {}, {"ok": out}
 
 
+def case_sc(rng):
+    from necalc import shortcircuit as SC
+    src = dict(kv=rng.choice([24.9, 13.8, 12.47, 4.16]),
+               fault_ka=rng.choice([0, 0, 10, 25, 40]),
+               xr=rng.choice([8, 15, 25]), z_tol=rng.random() < 0.6,
+               edition=rng.choice(["2023", "2026"]))
+    segs = [dict(name="MSB", kind="xfmr", kva=rng.choice(T.XFMR_KVA_3PH[5:14]),
+                 z_pct=rng.choice([4.5, 5.75, 6.5]), xr=rng.choice([4, 6, 8, 10]),
+                 sec_v=rng.choice([480, 208]),
+                 device=rng.choice(T.SC_DEVICES),
+                 aic_ka=rng.choice([0, 42, 65, 100]),
+                 motor_a=rng.choice([0, 0, 200, 800]))]
+    for n in range(rng.randint(0, 4)):
+        kind = rng.choice(["cable", "cable", "busway", "xfmr"])
+        segs.append(dict(
+            name=f"B{n}", kind=kind, kva=rng.choice([45, 75, 150, 300]),
+            z_pct=rng.choice([3.5, 4.5, 5.0]), xr=rng.choice([2, 3, 5]),
+            sec_v=rng.choice([208, 240]),
+            length_ft=round(rng.uniform(5, 400), 1),
+            size=rng.choice(["4/0", "250", "500", "750", "2", "12", "700"]),
+            sets=rng.choice([1, 1, 2, 4]), material=rng.choice(["cu", "al"]),
+            conduit=rng.choice(["steel", "pvc"]),
+            rating=rng.choice([800, 1600, 2500, 4000, 3200, 1350]),
+            device=rng.choice(T.SC_DEVICES),
+            aic_ka=rng.choice([0, 10, 14, 22, 35, 65]),
+            motor_a=rng.choice([0, 0, 100])))
+    args = dict(src=src, segs=segs)
+    return "shortcircuit", args, run(lambda: ser_result(
+        SC.design_shortcircuit(SC.SCSource(**src),
+                               [SC.SCSegment(**g) for g in segs])))
+
+
+def case_harm(rng):
+    from necalc import harmonics as HM
+    drives = [dict(name=f"D{n}", qty=rng.choice([0, 1, 2, 4]),
+                   hp=rng.choice([5, 10, 25, 50, 100, 250, 7.5]),
+                   drive_type=rng.choice(T.HARM_DRIVE_TYPES),
+                   load_pct=rng.choice([100, 80, 50]),
+                   input_a=rng.choice([0, 0, 0, 65.0]),
+                   thd_pct=rng.choice([0, 0, 0, 35.0, 5.0]))
+              for n in range(rng.randint(1, 6))]
+    x = dict(voltage=rng.choice([480, 208, 4160, 600]),
+             isc_ka=rng.choice([5, 20, 35, 52.3, 100]),
+             il_a=rng.choice([0, 0, 500, 2000]),
+             linear_a=rng.choice([0, 100, 800]),
+             edition=rng.choice(["2023", "2026"]), drives=drives)
+    return "harmonics", dict(x=x), run(lambda: ser_result(
+        HM.design_harmonics(HM.HarmInput(
+            **{k: v for k, v in x.items() if k != "drives"},
+            drives=[HM.HarmDrive(**d) for d in drives]))))
+
+
 KINDS = [case_general, case_motor, case_mv, case_xfmr, case_loads,
-         case_tray, case_format]
+         case_tray, case_format, case_sc, case_harm]
 
 
 def main():

@@ -9,6 +9,8 @@ from . import tables as T
 from . import engine as E
 from . import loads as L
 from . import tray as TR
+from . import shortcircuit as SC
+from . import harmonics as HM
 from . import report as R
 from .codes import EDITIONS
 from .i18n import tr, opt
@@ -54,6 +56,18 @@ DEFAULTS = {
     "lc.l.conn": "auto",
     # reference
     "ref.table": "310.16",
+    # short circuit / IC
+    "sc.kv": "24.9", "sc.fault": "0", "sc.xr": "15", "sc.ztol": True,
+    "sc.e.name": "PNL-1", "sc.e.kind": "cable", "sc.e.kva": "75",
+    "sc.e.z_pct": "4.5", "sc.e.xr": "3", "sc.e.sec_v": "208",
+    "sc.e.length_ft": "50", "sc.e.size": "4/0", "sc.e.sets": "1",
+    "sc.e.material": "cu", "sc.e.conduit": "steel", "sc.e.rating": "800",
+    "sc.e.device": "mccb", "sc.e.aic_ka": "0", "sc.e.motor_a": "0",
+    # harmonics
+    "hm.v": "480", "hm.isc": "52.3", "hm.il": "0", "hm.lin": "400",
+    "hm.e.name": "VFD-1", "hm.e.qty": "1", "hm.e.hp": "50",
+    "hm.e.drive_type": "6p_ac3", "hm.e.load_pct": "100", "hm.e.input_a": "0",
+    "hm.e.thd_pct": "0",
 }
 
 WIRING_DEFAULTS = {
@@ -98,6 +112,25 @@ PANEL_EXAMPLE = [
            phases=3),
     L.Load("Water heater", "equipment", 1, 4.5, "kW", 1.0, voltage=208,
            phases=1, continuous=True),
+]
+
+SC_EXAMPLE = [
+    SC.SCSegment("MSB", "xfmr", kva=2500, z_pct=5.75, xr=8, sec_v=480,
+                 device="lvpcb", aic_ka=65, motor_a=500),
+    SC.SCSegment("DP-1", "busway", length_ft=150, rating=2000,
+                 device="iccb", aic_ka=65),
+    SC.SCSegment("DP-2", "cable", length_ft=200, size="500", sets=2,
+                 device="mccb", aic_ka=35),
+    SC.SCSegment("T-LP1", "xfmr", kva=75, z_pct=4.5, xr=3, sec_v=208,
+                 device="mccb", aic_ka=10),
+    SC.SCSegment("LP-1", "cable", length_ft=30, size="4/0",
+                 device="mccb", aic_ka=10),
+]
+
+HARM_EXAMPLE = [
+    HM.HarmDrive("AHU fans", 4, 50, "6p"),
+    HM.HarmDrive("CHW pumps", 3, 75, "6p_ac3"),
+    HM.HarmDrive("Cooling tower", 2, 40, "6p_dc"),
 ]
 
 TRAY_EXAMPLE = [
@@ -145,10 +178,13 @@ class App:
                 else tk.StringVar(value=d)
         self.panel_loads = [L.Load(**vars(x)) for x in PANEL_EXAMPLE]
         self.tray_cables = [TR.TrayCable(**vars(x)) for x in TRAY_EXAMPLE]
+        self.sc_segs = [SC.SCSegment(**vars(x)) for x in SC_EXAMPLE]
+        self.harm_drives = [HM.HarmDrive(**vars(x)) for x in HARM_EXAMPLE]
         self.results = {}       # tab key -> (title key, Result | callable)
         self.inputs = {}        # tab key -> [(label key, value)]
         self.texts = {}         # tab key -> Text widget
         self._method_frames = {}  # wiring prefix -> (cable, busway) frames
+        self._lst_tv = {}         # list editor key -> Treeview
         self.current_tab = 0
         self._setup_style()
         self.build()
@@ -218,6 +254,7 @@ class App:
         tabs = [("tab_branch", self.tab_branch), ("tab_motor", self.tab_motor),
                 ("tab_xfmr", self.tab_xfmr), ("tab_mv", self.tab_mv),
                 ("tab_tray", self.tab_tray), ("tab_load", self.tab_load),
+                ("tab_sc", self.tab_sc), ("tab_harm", self.tab_harm),
                 ("tab_ref", self.tab_ref)]
         for key, fn in tabs:
             f = ttk.Frame(self.nb, padding=6)
@@ -241,7 +278,8 @@ class App:
         # re-run calculations so code references follow the edition
         for key, fn in (("br", self.calc_branch), ("mo", self.calc_motor),
                         ("xf", self.calc_xfmr), ("mv", self.calc_mv),
-                        ("tr", self.calc_tray), ("lc", self.calc_load)):
+                        ("tr", self.calc_tray), ("lc", self.calc_load),
+                        ("sc", self.calc_sc), ("hm", self.calc_harm)):
             if key in self.results:
                 fn()
 
@@ -1154,6 +1192,238 @@ class App:
         self.calc_load(feeder=True)
 
     # ------------------------------------------------------------------
+    # generic list editor (short-circuit path, harmonic drives)
+    # ------------------------------------------------------------------
+    LISTS = {
+        "sc": {"attr": "sc_segs", "cls": SC.SCSegment, "prefix": "sc.e.",
+               "fields": (("name", str), ("kind", str), ("kva", float),
+                          ("z_pct", float), ("xr", float), ("sec_v", float),
+                          ("length_ft", float), ("size", str), ("sets", int),
+                          ("material", str), ("conduit", str),
+                          ("rating", float), ("device", str),
+                          ("aic_ka", float), ("motor_a", float))},
+        "hm": {"attr": "harm_drives", "cls": HM.HarmDrive, "prefix": "hm.e.",
+               "fields": (("name", str), ("qty", int), ("hp", float),
+                          ("drive_type", str), ("load_pct", float),
+                          ("input_a", float), ("thd_pct", float))},
+    }
+
+    def _lst_form(self, key):
+        spec = self.LISTS[key]
+        kw = {}
+        for name, conv in spec["fields"]:
+            raw = self.v[spec["prefix"] + name].get()
+            if conv is str:
+                kw[name] = raw
+            else:
+                kw[name] = conv(_f(raw or 0, name))
+        return spec["cls"](**kw)
+
+    def _lst_items(self, key):
+        return getattr(self, self.LISTS[key]["attr"])
+
+    def _lst_refresh(self, key):
+        tv = self._lst_tv[key]
+        tv.delete(*tv.get_children())
+        for i, it in enumerate(self._lst_items(key)):
+            tv.insert("", "end", iid=str(i), values=self._lst_row(key, it))
+
+    def _lst_row(self, key, it):
+        if key == "sc":
+            if it.kind == "xfmr":
+                det = f"{it.kva:g} kVA, Z {it.z_pct:g}%, X/R {it.xr:g}, " \
+                      f"{it.sec_v:g} V"
+            elif it.kind == "busway":
+                det = f"{it.rating:g} A busway, {it.length_ft:g} ft"
+            else:
+                det = f"{it.sets} x #{it.size} {it.material.upper()}, " \
+                      f"{it.length_ft:g} ft"
+            aic = f"{it.aic_ka:g} kA" if it.aic_ka else "-"
+            return (it.name, opt(it.kind, self.lang), det,
+                    opt(it.device, self.lang), aic)
+        return (it.name, it.qty, f"{it.hp:g}", opt(it.drive_type, self.lang),
+                f"{it.load_pct:g}")
+
+    def _lst_select(self, key):
+        sel = self._lst_tv[key].selection()
+        if not sel:
+            return
+        spec = self.LISTS[key]
+        it = self._lst_items(key)[int(sel[0])]
+        for name, conv in spec["fields"]:
+            val = getattr(it, name)
+            self.v[spec["prefix"] + name].set(
+                val if conv is str else f"{val:g}")
+
+    def _lst_action(self, key, action):
+        items = self._lst_items(key)
+        sel = self._lst_tv[key].selection()
+        try:
+            if action == "add":
+                items.append(self._lst_form(key))
+            elif action == "update" and sel:
+                items[int(sel[0])] = self._lst_form(key)
+            elif action == "delete" and sel:
+                del items[int(sel[0])]
+            elif action == "clear":
+                items.clear()
+            elif action == "example":
+                ex = SC_EXAMPLE if key == "sc" else HARM_EXAMPLE
+                items[:] = [type(x)(**vars(x)) for x in ex]
+        except (E.CalcError, ValueError) as e:
+            messagebox.showerror(self.t("error"), str(e))
+            return
+        self._lst_refresh(key)
+
+    def _lst_panel(self, parent, key, col, cols, widths, title_key):
+        g = self.group(parent, title_key, col)
+        tv = ttk.Treeview(g, columns=cols, show="headings", height=9,
+                          selectmode="browse")
+        for c, wdt in zip(cols, widths):
+            tv.heading(c, text=self.t(c))
+            tv.column(c, width=wdt, anchor="w")
+        tv.pack(fill="both", expand=True)
+        tv.bind("<<TreeviewSelect>>", lambda _e: self._lst_select(key))
+        self._lst_tv[key] = tv
+        self._lst_refresh(key)
+
+    def _lst_buttons(self, g, key, row):
+        bf = ttk.Frame(g)
+        bf.grid(row=row, column=0, columnspan=4, sticky="we", pady=(6, 0))
+        for k in ("add", "update", "delete", "clear", "load_example"):
+            ttk.Button(bf, text=self.t(k), width=9,
+                       command=lambda k=k: self._lst_action(
+                           key, "example" if k == "load_example" else k)
+                       ).pack(side="left", padx=2)
+
+    # ------------------------------------------------------------------
+    # Tab: short circuit / IC
+    # ------------------------------------------------------------------
+    def tab_sc(self, f):
+        g = self.group(f, "grp_source", 0)
+        r = 0
+        self._row(g, r, "src_kv", self.editable(
+            "sc.kv", ("24.9", "13.8", "12.47", "4.16", "0.48"), width=7)); r += 1
+        self._row(g, r, "src_fault", self.entry("sc.fault", 8)); r += 1
+        self._row(g, r, "src_xr", self.entry("sc.xr", 8)); r += 1
+        ttk.Checkbutton(g, variable=self.v["sc.ztol"], text=self.t("z_tol"))\
+            .grid(row=r, column=0, columnspan=2, sticky="w", padx=4); r += 1
+        self.calc_button(g, self.calc_sc, r)
+
+        e = self.group(f, "seg_kind", 1)
+        p = "sc.e."
+        rows = [
+            ("seg_name", self.entry(p + "name", 12),
+             "seg_kind", self.combo(p + "kind", SC.SEG_KINDS, width=12)),
+            ("kva", self.entry(p + "kva", 8),
+             "z_pct", self.entry(p + "z_pct", 8)),
+            ("xr", self.entry(p + "xr", 8),
+             "sec_v", self.editable(p + "sec_v", ("480", "208", "240"), 8)),
+            ("length", self.entry(p + "length_ft", 8),
+             "cable_size", self.combo(p + "size", T.SIZES, labeler=str,
+                                      width=8)),
+            ("sets", self.entry(p + "sets", 8),
+             "material", self.combo(p + "material", ("cu", "al"), width=10)),
+            ("conduit_mag", self.combo(p + "conduit", ("steel", "pvc"),
+                                       width=12),
+             "busway_rating_a", self.editable(
+                 p + "rating", [str(x) for x in sorted(
+                     T.ILINE_IMPEDANCE["cu"])], 8)),
+            ("device_type", self.combo(p + "device", T.SC_DEVICES, width=12),
+             "aic_sel", self.editable(p + "aic_ka",
+                                      ["0"] + [str(x) for x in
+                                               T.AIC_RATINGS], 8)),
+            ("motor_load", self.entry(p + "motor_a", 8), None, None),
+        ]
+        for i, (k1, w1, k2, w2) in enumerate(rows):
+            self._row(e, i, k1, w1, col=0)
+            if k2:
+                self._row(e, i, k2, w2, col=2)
+        self._lst_buttons(e, "sc", len(rows))
+        self._lst_panel(f, "sc", 2, ("seg_name", "seg_kind", "notes",
+                                     "device_type", "aic_sel"),
+                        (90, 90, 190, 120, 70), "sc_path")
+        self.results_area(f, "sc")
+        f.columnconfigure(0, weight=0, minsize=370)
+        f.columnconfigure(1, weight=0, minsize=650)
+        f.columnconfigure(2, weight=1, minsize=250)
+
+    def calc_sc(self):
+        def run():
+            g = lambda k: self.v["sc." + k].get()
+            src = SC.SCSource(kv=_f(g("kv"), self.t("src_kv")),
+                              fault_ka=_f(g("fault") or 0,
+                                          self.t("src_fault")),
+                              xr=_f(g("xr"), self.t("src_xr")),
+                              z_tol=bool(g("ztol")), edition=self.edition)
+            res = SC.design_shortcircuit(
+                src, [SC.SCSegment(**vars(x)) for x in self.sc_segs])
+            self.results["sc"] = ("tab_sc", res)
+            self.inputs["sc"] = [("src_kv", g("kv")),
+                                 ("src_fault", g("fault")),
+                                 ("src_xr", g("xr"))] + [
+                (x.name, " | ".join(str(v) for v in
+                                    self._lst_row("sc", x)[1:]))
+                for x in self.sc_segs]
+            self.render("sc")
+        self._run("sc", run)
+
+    # ------------------------------------------------------------------
+    # Tab: harmonics / filters
+    # ------------------------------------------------------------------
+    def tab_harm(self, f):
+        g = self.group(f, "grp_pcc", 0)
+        r = 0
+        self._row(g, r, "pcc_v", self.editable(
+            "hm.v", ("480", "208", "600", "4160"), width=10)); r += 1
+        self._row(g, r, "pcc_isc", self.entry("hm.isc", 10)); r += 1
+        self._row(g, r, "pcc_il", self.entry("hm.il", 10)); r += 1
+        self._row(g, r, "linear_a", self.entry("hm.lin", 10)); r += 1
+        self.calc_button(g, self.calc_harm, r)
+
+        e = self.group(f, "drives", 1)
+        p = "hm.e."
+        r = 0
+        self._row(e, r, "col_name", self.entry(p + "name", 16)); r += 1
+        self._row(e, r, "col_qty", self.entry(p + "qty", 8)); r += 1
+        self._row(e, r, "hp", self.editable(p + "hp", T.MOTOR_HP, 8)); r += 1
+        self._row(e, r, "drive_type", self.combo(p + "drive_type",
+                                                 T.HARM_DRIVE_TYPES,
+                                                 width=26)); r += 1
+        self._row(e, r, "load_pct", self.entry(p + "load_pct", 8)); r += 1
+        self._row(e, r, "input_a", self.entry(p + "input_a", 8)); r += 1
+        self._row(e, r, "thd_pct", self.entry(p + "thd_pct", 8)); r += 1
+        self._lst_buttons(e, "hm", r)
+        self._lst_panel(f, "hm", 2, ("col_name", "col_qty", "hp",
+                                     "drive_type", "load_pct"),
+                        (110, 40, 60, 190, 60), "drives")
+        self.results_area(f, "hm")
+        f.columnconfigure(0, weight=0, minsize=390)
+        f.columnconfigure(1, weight=0, minsize=520)
+        f.columnconfigure(2, weight=1, minsize=330)
+
+    def calc_harm(self):
+        def run():
+            g = lambda k: self.v["hm." + k].get()
+            x = HM.HarmInput(voltage=_f(g("v"), self.t("pcc_v")),
+                             isc_ka=_f(g("isc"), self.t("pcc_isc")),
+                             il_a=_f(g("il") or 0, self.t("pcc_il")),
+                             linear_a=_f(g("lin") or 0, self.t("linear_a")),
+                             drives=[HM.HarmDrive(**vars(d))
+                                     for d in self.harm_drives],
+                             edition=self.edition)
+            res = HM.design_harmonics(x)
+            self.results["hm"] = ("tab_harm", res)
+            self.inputs["hm"] = [("pcc_v", g("v")), ("pcc_isc", g("isc")),
+                                 ("pcc_il", g("il")),
+                                 ("linear_a", g("lin"))] + [
+                (d.name, f"{d.qty} x {d.hp:g} HP, "
+                         f"{opt(d.drive_type, self.lang)}, {d.load_pct:g} %")
+                for d in self.harm_drives]
+            self.render("hm")
+        self._run("hm", run)
+
+    # ------------------------------------------------------------------
     # Tab: reference tables
     # ------------------------------------------------------------------
     REF_TABLES = ("310.16", "310.17", "310.15(B)(1)(1)", "310.15(C)(1)",
@@ -1180,7 +1450,7 @@ class App:
     # export / project files
     # ------------------------------------------------------------------
     def export_html(self):
-        order = ("br", "mo", "xf", "mv", "tr", "lc")
+        order = ("br", "mo", "xf", "mv", "tr", "lc", "sc", "hm")
         items, inputs = [], {}
         for key in order:
             if key not in self.results:
@@ -1229,7 +1499,9 @@ class App:
         return {"format": "necalc-project", "version": 1,
                 "vars": {k: v.get() for k, v in self.v.items()},
                 "panel_loads": [vars(x) for x in self.panel_loads],
-                "tray_cables": [vars(x) for x in self.tray_cables]}
+                "tray_cables": [vars(x) for x in self.tray_cables],
+                "sc_segments": [vars(x) for x in self.sc_segs],
+                "harm_drives": [vars(x) for x in self.harm_drives]}
 
     def load_project_dict(self, d):
         for k, val in d.get("vars", {}).items():
@@ -1238,6 +1510,10 @@ class App:
         self.panel_loads = [L.Load(**x) for x in d.get("panel_loads", [])]
         self.tray_cables = [TR.TrayCable(**x)
                             for x in d.get("tray_cables", [])]
+        if "sc_segments" in d:
+            self.sc_segs = [SC.SCSegment(**x) for x in d["sc_segments"]]
+        if "harm_drives" in d:
+            self.harm_drives = [HM.HarmDrive(**x) for x in d["harm_drives"]]
         self.results.clear()
         self.inputs.clear()
         self.build()

@@ -709,6 +709,207 @@ TEXT = {
                          "{amps} A",
                          "I-Line 匯流排槽 (最多 2 路並聯) 無法滿足 {amps} A"),
 
+
+    # ---------------- short circuit / IC ----------------
+    "tab_sc": ("Short Circuit / IC", "短路 / IC 值"),
+    "nav_sc": ("Fault", "短路"),
+    "grp_source": ("Utility source", "電源 (台電 / 公用電力)"),
+    "src_kv": ("Source voltage (kV)", "電源電壓 (kV)"),
+    "src_fault": ("Available fault (kA, 0 = infinite)",
+                  "可用故障電流 (kA，0 = 無限大)"),
+    "src_xr": ("Source X/R", "電源 X/R"),
+    "z_tol": ("Apply −10 % transformer Z tolerance (worst case)",
+              "變壓器阻抗 −10 % 公差 (最嚴重情況)"),
+    "sc_path": ("Radial path (source → load)", "放射路徑 (電源 → 負載)"),
+    "seg_kind": ("Element", "元件"),
+    "opt_xfmr": ("Transformer", "變壓器"),
+    "seg_name": ("Bus / panel name", "匯流排 / 盤名"),
+    "xr": ("X/R", "X/R"),
+    "conduit_mag": ("Conduit", "導線管"),
+    "opt_steel": ("Steel (magnetic)", "鋼管 (磁性)"),
+    "opt_pvc": ("PVC / aluminum", "PVC / 鋁管"),
+    "device_type": ("Protective device", "保護設備"),
+    "opt_mccb": ("Molded-case CB (MCCB)", "塑殼斷路器 (MCCB)"),
+    "opt_iccb": ("Insulated-case CB (ICCB)", "絕緣殼斷路器 (ICCB)"),
+    "opt_lvpcb": ("LV power CB (ACB)", "低壓電力斷路器 (ACB)"),
+    "aic_sel": ("Device IC rating (kA, 0 = recommend)",
+                "設備 IC 額定 (kA，0 = 建議)"),
+    "motor_load": ("Motor load at bus (A FLC)", "匯流排馬達負載 (A FLC)"),
+    "add_segment": ("Add element", "新增元件"),
+    "empty_list": ("Nothing here yet. Add the first item above.",
+                   "尚無資料，請由上方新增第一筆。"),
+    "busway_rating_a": ("Busway rating (A)", "匯流排槽額定 (A)"),
+    "s_sc_max": ("Maximum fault", "最大故障電流"),
+    "s_sc_buses": ("Buses", "匯流排數"),
+    "col_bus": ("Bus", "匯流排"),
+    "col_isc": ("I_sc sym", "對稱短路"),
+    "col_xr": ("X/R", "X/R"),
+    "col_req": ("Min. IC", "最小 IC"),
+    "col_sel": ("Selected", "選用"),
+    "st_sc_source": (
+        "Utility: {kv:g} kV, {ka:g} kA, X/R {xr:g} → Z = {z:.2f} mΩ",
+        "電源：{kv:g} kV，{ka:g} kA，X/R {xr:g} → Z = {z:.2f} mΩ"),
+    "st_sc_infinite": (
+        "Utility at {kv:g} kV taken as an infinite bus (Z = 0)",
+        "{kv:g} kV 電源視為無限大匯流排 (Z = 0)"),
+    "st_sc_xfmr": (
+        "{name}: {kva:g} kVA, Z {z:g}% × {tol:.2f}, X/R {xr:g} → R {r:.3f} / "
+        "X {x:.3f} mΩ at {volts:g} V (upstream referred by turns ratio²)",
+        "{name}：{kva:g} kVA，Z {z:g}% × {tol:.2f}，X/R {xr:g} → R {r:.3f} / "
+        "X {x:.3f} mΩ (於 {volts:g} V，上游阻抗依匝比平方換算)"),
+    "st_sc_cable": (
+        "{name}: {sets} × #{size}, {length:g} ft → R {r:.3f} / X {x:.3f} mΩ "
+        "(R × {corr:.3f} to 25 °C)",
+        "{name}：{sets} × #{size}，{length:g} ft → R {r:.3f} / X {x:.3f} mΩ "
+        "(R × {corr:.3f} 換算至 25 °C)"),
+    "st_sc_busway": (
+        "{name}: {rating:g} A I-Line busway, {length:g} ft → R {r:.3f} / "
+        "X {x:.3f} mΩ (R × {corr:.3f} to 25 °C)",
+        "{name}：{rating:g} A I-Line 匯流排槽，{length:g} ft → R {r:.3f} / "
+        "X {x:.3f} mΩ (R × {corr:.3f} 換算至 25 °C)"),
+    "st_sc_bus": (
+        "{name} ({volts:g} V): Z = {r:.3f} + j{x:.3f} mΩ, X/R {xr:.1f} → "
+        "{isc:.1f} kA + motors {motor:.1f} kA = {total:.1f} kA sym.",
+        "{name} ({volts:g} V)：Z = {r:.3f} + j{x:.3f} mΩ，X/R {xr:.1f} → "
+        "{isc:.1f} kA + 馬達 {motor:.1f} kA = {total:.1f} kA (對稱)"),
+    "st_sc_required": (
+        "{name}: {dev} test X/R {xrt:.2f}, factor {mf:.3f} → {adj:.1f} kA → "
+        "minimum interrupting rating {req} kA",
+        "{name}：{dev} 試驗 X/R {xrt:.2f}，修正係數 {mf:.3f} → {adj:.1f} kA "
+        "→ 最小啟斷容量 {req} kA"),
+    "st_sc_required_none": (
+        "{name}: {dev}, factor {mf:.3f} → {adj:.1f} kA exceeds 200 kA",
+        "{name}：{dev}，修正係數 {mf:.3f} → {adj:.1f} kA 超過 200 kA"),
+    "st_sc_aic": (
+        "{name}: selected {aic:g} kA vs {adj:.1f} kA (factor {mf:.3f})",
+        "{name}：選用 {aic:g} kA 對 {adj:.1f} kA (修正係數 {mf:.3f})"),
+    "st_sc_label": (
+        "{name}: field-mark the available fault current ({total:.1f} kA) and "
+        "the calculation date on service equipment",
+        "{name}：於受電設備現場標示可用故障電流 ({total:.1f} kA) 及計算日期"),
+    "w_sc_infinite": (
+        "Utility source taken as infinite - conservative; enter the "
+        "utility's available fault current for a closer value",
+        "電源視為無限大 (保守)；輸入電力公司提供之故障電流可得較準確值"),
+    "w_sc_exceeds": (
+        "{name}: {ka:.1f} kA - use current-limiting fuses or a tested series "
+        "combination (240.86)",
+        "{name}：{ka:.1f} kA，請採用限流熔絲或經試驗之串聯額定組合 (240.86)"),
+    "w_sc_motor": (
+        "Motor contribution taken as 4 × FLC at each bus where entered "
+        "(conservative)",
+        "馬達貢獻以各匯流排輸入之 FLC × 4 計 (保守)"),
+    "err_sc_empty": ("Add at least one element to the path",
+                     "請至少新增一個元件"),
+    "err_sc_mv_segment": (
+        "{name}: cable / busway elements are for systems ≤ 1000 V - add a "
+        "transformer first",
+        "{name}：電纜 / 匯流排槽元件適用 ≤ 1000 V，請先加入變壓器"),
+    "err_sc_infinite_bus": (
+        "{name}: zero impedance with an infinite source - add a transformer "
+        "or a utility fault level",
+        "{name}：無限大電源且阻抗為零，請加入變壓器或電源故障電流"),
+
+    # ---------------- harmonics ----------------
+    "tab_harm": ("Harmonics / Filters", "諧波 / 濾波器"),
+    "nav_harm": ("Harm.", "諧波"),
+    "grp_pcc": ("Point of common coupling (PCC)", "共同耦合點 (PCC)"),
+    "pcc_v": ("PCC voltage (V)", "PCC 電壓 (V)"),
+    "pcc_isc": ("Available fault at PCC (kA)", "PCC 可用故障電流 (kA)"),
+    "pcc_il": ("Max demand current I_L (A, 0 = connected)",
+               "最大需量電流 I_L (A，0 = 依連接負載)"),
+    "linear_a": ("Other linear load (A)", "其他線性負載 (A)"),
+    "drives": ("Drives", "變頻器清單"),
+    "add_drive": ("Add drive", "新增變頻器"),
+    "drive_type": ("Front end", "前端整流型式"),
+    "load_pct": ("Load (%)", "負載率 (%)"),
+    "input_a": ("Rated input current (A, 0 = calc)",
+                "額定輸入電流 (A，0 = 計算)"),
+    "thd_pct": ("Manufacturer THDi (%, 0 = typical)",
+                "原廠 THDi (%，0 = 典型值)"),
+    "opt_6p": ("6-pulse, no reactor", "6 脈波，無電抗器"),
+    "opt_6p_ac3": ("6-pulse + 3 % AC line reactor", "6 脈波 + 3 % 交流電抗器"),
+    "opt_6p_ac5": ("6-pulse + 5 % AC line reactor", "6 脈波 + 5 % 交流電抗器"),
+    "opt_6p_dc": ("6-pulse + DC choke", "6 脈波 + 直流電抗器"),
+    "opt_12p": ("12-pulse", "12 脈波"),
+    "opt_18p": ("18-pulse", "18 脈波"),
+    "opt_afe": ("Active front end (AFE)", "主動前端 (AFE)"),
+    "opt_6p_passive": ("6-pulse + passive harmonic filter",
+                       "6 脈波 + 被動諧波濾波器"),
+    "opt_mit_ac5": ("Add 5 % line reactors to 6-pulse drives without one",
+                    "無電抗器之 6 脈波加裝 5 % 電抗器"),
+    "opt_mit_passive": ("Passive harmonic filter on each 6-pulse drive",
+                        "每台 6 脈波加裝被動諧波濾波器"),
+    "opt_mit_18p": ("Replace 6-pulse drives with 18-pulse",
+                    "6 脈波改用 18 脈波變頻器"),
+    "opt_il_given": ("entered", "輸入值"),
+    "opt_il_connected": ("connected load", "依連接負載"),
+    "s_h_tdd": ("Current TDD", "電流 TDD"),
+    "s_h_tdd_lim": ("TDD limit", "TDD 限制"),
+    "s_h_vthd": ("Voltage THD", "電壓 THD"),
+    "s_h_ratio": ("I_sc / I_L", "I_sc / I_L"),
+    "s_h_k": ("K-factor", "K 因數"),
+    "s_h_ahf": ("Active harmonic filter", "主動諧波濾波器"),
+    "col_h": ("h", "h"),
+    "col_ih": ("I_h (A)", "I_h (A)"),
+    "col_pct_il": ("% of I_L", "% I_L"),
+    "col_limit": ("Limit %", "限制 %"),
+    "col_vh": ("V_h %", "V_h %"),
+    "col_option": ("Mitigation", "改善方案"),
+    "st_h_drive": (
+        "{name}: {qty} × {hp:g} HP, {kind}, {load:g} % load → fundamental "
+        "{i1:.1f} A, THDi {thd:.1f} %",
+        "{name}：{qty} × {hp:g} HP，{kind}，負載 {load:g} % → 基本波 "
+        "{i1:.1f} A，THDi {thd:.1f} %"),
+    "st_h_il": (
+        "I_L = {il:.1f} A ({src}); I_sc = {isc:g} kA → I_sc/I_L = "
+        "{ratio:.0f} → TDD limit {tdd:g} %",
+        "I_L = {il:.1f} A ({src})；I_sc = {isc:g} kA → I_sc/I_L = "
+        "{ratio:.0f} → TDD 限制 {tdd:g} %"),
+    "st_h_order": (
+        "h{h}: {amps:.1f} A = {pct:.2f} % of I_L (limit {lim:g} %)",
+        "h{h}：{amps:.1f} A = I_L 之 {pct:.2f} % (限制 {lim:g} %)"),
+    "st_h_tdd": (
+        "Harmonic current {rms:.1f} A → TDD {tdd:.2f} % (limit {lim:g} %)",
+        "諧波電流 {rms:.1f} A → TDD {tdd:.2f} % (限制 {lim:g} %)"),
+    "st_h_vthd": (
+        "Voltage THD ≈ {vthd:.2f} % (limit {lim:g} %); largest individual "
+        "{vmax:.2f} % (limit {vlim:g} %)",
+        "電壓 THD ≈ {vthd:.2f} % (限制 {lim:g} %)；最大單次 {vmax:.2f} % "
+        "(限制 {vlim:g} %)"),
+    "st_h_k": (
+        "K-factor {k:.2f} → K-{kr} rated transformer if it feeds mainly "
+        "these loads",
+        "K 因數 {k:.2f} → 若變壓器主要供應此類負載，選用 K-{kr} 額定"),
+    "st_h_option": (
+        "{opt}: TDD {tdd:.2f} %, voltage THD {vthd:.2f} %",
+        "{opt}：TDD {tdd:.2f} %，電壓 THD {vthd:.2f} %"),
+    "st_h_ahf": (
+        "Active harmonic filter at PCC: cancel {k:.0f} % of {rms:.1f} A = "
+        "{req:.1f} A → {units} × {frame} A (TDD → {tdd:.2f} %, "
+        "voltage THD → {vthd:.2f} %)",
+        "PCC 主動諧波濾波器：消除 {rms:.1f} A 之 {k:.0f} % = {req:.1f} A → "
+        "{units} × {frame} A (TDD → {tdd:.2f} %，電壓 THD → {vthd:.2f} %)"),
+    "st_h_ahf_none": (
+        "No active harmonic filter needed (within 90 % of IEEE 519 limits)",
+        "不需主動諧波濾波器 (已在 IEEE 519 限制之 90 % 以內)"),
+    "w_h_typical": (
+        "Harmonic spectra are TYPICAL for each front end - enter the drive "
+        "manufacturer's THDi or a harmonic study for final design",
+        "諧波頻譜為各整流型式之典型值，最終設計請輸入原廠 THDi 或進行諧波分析"),
+    "w_h_il_connected": (
+        "I_L taken from the connected load; IEEE 519 uses the maximum demand "
+        "current (12-month average) - a lower I_L gives a higher TDD",
+        "I_L 依連接負載計算；IEEE 519 採最大需量電流 (12 個月平均)，"
+        "實際 I_L 較低時 TDD 會較高"),
+    "w_h_estimated": (
+        "Drive input current estimated from HP, efficiency 0.92 and "
+        "displacement PF - enter nameplate input current where known",
+        "變頻器輸入電流依 HP、效率 0.92 及位移功因估算，"
+        "已知銘牌輸入電流時請輸入"),
+    "err_h_empty": ("Add at least one drive", "請至少新增一台變頻器"),
+    "err_h_no_load": ("PCC load current is zero", "PCC 負載電流為零"),
+
     # ---------------- errors ----------------
     "err_ambient": ("Ambient {ambient} °C not permitted for {temp} °C "
                     "conductors", "周溫 {ambient} °C 不適用於 {temp} °C 導線"),

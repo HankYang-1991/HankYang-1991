@@ -140,6 +140,7 @@ details.more[open] > summary::before { content: "−"; }
 
 /* ---------- results ---------- */
 .results { display: grid; gap: 12px; align-content: start; }
+.results > *, .inputs > * { min-width: 0; }
 .res-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .res-head h3 { margin: 0; font: 600 20px/1.1 var(--f-display); letter-spacing: .02em; }
 .callout {
@@ -207,7 +208,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-.tabbar-in { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.tabbar-in { max-width: 760px; margin: 0 auto; display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); }
 .tabbar button {
   border: 0; background: transparent; height: var(--nav-h); display: grid; place-items: center;
   align-content: center; gap: 2px; font-size: 12px; color: var(--muted); cursor: pointer; position: relative;
@@ -218,7 +219,9 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
 .tabbar button[aria-current="page"]::before {
   content: ""; position: absolute; top: 0; left: 22%; right: 22%; height: 3px; border-radius: 0 0 3px 3px; background: var(--accent);
 }
-.tabbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tabbar span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; font-size: 11.5px; }
+table.cap td.ng { color: var(--ng); font-weight: 600; }
+table.cap td.okc { color: var(--ok); font-weight: 600; }
 @media (prefers-reduced-motion: no-preference) {
   .track i, .pb .bar i { transition: width .25s ease; }
 }
@@ -263,6 +266,18 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     { name: "Split A/C", category: "cooling", qty: 1, rating: 7.5, unit: "kVA", pf: 0.88, voltage: 208, phases: 3 },
     { name: "Water heater", category: "equipment", qty: 1, rating: 4.5, unit: "kW", pf: 1, voltage: 208, phases: 1, continuous: true }
   ];
+  var EXAMPLE_SEGS = [
+    { name: "MSB", kind: "xfmr", kva: 2500, z_pct: 5.75, xr: 8, sec_v: 480, device: "lvpcb", aic_ka: 65, motor_a: 500 },
+    { name: "DP-1", kind: "busway", length_ft: 150, rating: 2000, device: "iccb", aic_ka: 65 },
+    { name: "DP-2", kind: "cable", length_ft: 200, size: "500", sets: 2, device: "mccb", aic_ka: 35 },
+    { name: "T-LP1", kind: "xfmr", kva: 75, z_pct: 4.5, xr: 3, sec_v: 208, device: "mccb", aic_ka: 10 },
+    { name: "LP-1", kind: "cable", length_ft: 30, size: "4/0", sets: 1, device: "mccb", aic_ka: 10 }
+  ];
+  var EXAMPLE_DRIVES = [
+    { name: "AHU fans", qty: 4, hp: 50, drive_type: "6p" },
+    { name: "CHW pumps", qty: 3, hp: 75, drive_type: "6p_ac3" },
+    { name: "Cooling tower", qty: 2, hp: 40, drive_type: "6p_dc" }
+  ];
   var EXAMPLE_CABLES = [
     { name: "FDR-1 (2 sets)", kind: "lv_multi", size: "500", n_cond: 3, qty: 2 },
     { name: "FDR-2", kind: "lv_multi", size: "4/0", n_cond: 4, qty: 1 },
@@ -286,7 +301,11 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
             cap_kind: "lv_multi", cap_n: "3", cap_mat: "cu", cap_ins: "25kV_133", show_cap: false },
       lc: { name: "LP-1", system: "208Y/120", div: "1.0", tpf: "0.95",
             loads: EXAMPLE_LOADS.map(function (l) { return N.loadItem(l); }), example: true },
-      lcw: wDef({ len: "100", vd: "2" })
+      lcw: wDef({ len: "100", vd: "2" }),
+      sc: { kv: "24.9", fault: "0", xr: "15", ztol: true, example: true,
+            segs: EXAMPLE_SEGS.map(function (x) { return N.scSegment(x); }) },
+      hm: { v: "480", isc: "52.3", il: "0", lin: "400", example: true,
+            drives: EXAMPLE_DRIVES.map(function (x) { return N.harmDrive(x); }) }
     };
   }
   function loadState() {
@@ -308,7 +327,8 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     return d;
   }
   var S = loadState();
-  var UI = { edit: { lc: null, tr: null }, draft: { lc: null, tr: null }, clearArm: {}, stepsOpen: {} };
+  var UI = { edit: { lc: null, tr: null, sc: null, hm: null }, draft: { lc: null, tr: null, sc: null, hm: null },
+    clearArm: {}, stepsOpen: {} };
   function save() { try { localStorage.setItem(STORE, JSON.stringify(S)); } catch (e) { /* ignore */ } }
 
   function t(k, p) { return N.tr(k, S.lang, p); }
@@ -430,7 +450,10 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     { id: "mv", nav: "nav_mv", title: "tab_mv", icon: '<path d="M13 2.5 5.5 13.5h5.5l-1 8 8-11.5h-5.5z"/>' },
     { id: "tr", nav: "nav_tray", title: "tab_tray",
       icon: '<path d="M3 8h18M3 16h18M6 8v8M10 8v8M14 8v8M18 8v8"/>' },
-    { id: "lc", nav: "nav_load", title: "tab_load", icon: '<path d="M5 20v-8M10 20V5M15 20v-6M20 20V9M3 20h18"/>' }
+    { id: "lc", nav: "nav_load", title: "tab_load", icon: '<path d="M5 20v-8M10 20V5M15 20v-6M20 20V9M3 20h18"/>' },
+    { id: "sc", nav: "nav_sc", title: "tab_sc", icon: '<path d="M2 12h5l2.5-6 5 12 2.5-6h5"/>' },
+    { id: "hm", nav: "nav_harm", title: "tab_harm",
+      icon: '<path d="M2 12c2.5-8 5-8 7.5 0s5 8 7.5 0"/><path d="M17 12c1.2-3.5 2.5-3.5 3.7 0"/>' }
   ];
 
   function formBranch() {
@@ -647,8 +670,98 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     return { panel: p, calc: c, feeder: feeder, ferr: ferr };
   }
 
-  var FORMS = { br: formBranch, mo: formMotor, xf: formXfmr, mv: formMv, tr: formTray, lc: formLoad };
-  var CALCS = { br: calcBranch, mo: calcMotor, xf: calcXfmr, mv: calcMv, tr: calcTray, lc: calcLoad };
+  // ---- short circuit / IC ----
+  var SC_DETAIL = {
+    xfmr: function (c) { return fmtNum(c.kva) + " kVA, Z " + fmtNum(c.z_pct) + " %, X/R " + fmtNum(c.xr) + ", " + fmtNum(c.sec_v) + " V"; },
+    cable: function (c) { return c.sets + " × #" + c.size + " " + c.material.toUpperCase() + ", " + fmtNum(c.length_ft) + " ft"; },
+    busway: function (c) { return fmtNum(c.rating) + " A I-Line, " + fmtNum(c.length_ft) + " ft"; }
+  };
+  function fmtNum(v) { return N.fmtG(Number(v)); }
+  function listCard(key, titleKey, addKey, emptyKey, items, rowFn, editorFn) {
+    var h = '<div class="card"><div class="res-head"><p class="eyebrow" style="margin:0">' + esc(t(titleKey)) +
+      '</p><button type="button" class="btn" data-act="' + key + '-new">' + esc(t(addKey)) + "</button></div>";
+    if (S[key].example) h += '<p class="example">' + esc(t("example_note")) + "</p>";
+    h += '<div class="list">' + (UI.edit[key] === "new" ? editorFn() : "");
+    if (!items.length && UI.edit[key] !== "new") h += '<div class="empty">' + esc(t(emptyKey)) + "</div>";
+    items.forEach(function (it, i) {
+      if (UI.edit[key] === i) { h += editorFn(); return; }
+      var r = rowFn(it);
+      h += '<div class="item"><div class="nm">' + esc(r[0]) + '</div><div class="act">' +
+        '<button type="button" class="btn" data-act="' + key + '-edit" data-i="' + i + '">' + esc(t("edit")) + "</button>" +
+        '<button type="button" class="btn danger" data-act="' + key + '-del" data-i="' + i + '" aria-label="' + esc(t("delete")) + '">×</button></div>' +
+        '<div class="meta"><span class="tag">' + esc(r[1]) + "</span>" + esc(r[2]) + "</div></div>";
+    });
+    return h + '</div><div class="btn-row"><button type="button" class="btn ghost" data-act="' + key + '-example">' +
+      esc(t("load_example")) + '</button><button type="button" class="btn ghost danger" data-act="' + key + '-clear">' +
+      esc(UI.clearArm[key] ? t("confirm_clear") : t("clear")) + "</button></div></div>";
+  }
+  function editorButtons(key) {
+    return '<div class="btn-row"><button type="button" class="btn primary" data-act="' + key + '-save">' + esc(t("save_item")) +
+      '</button><button type="button" class="btn" data-act="' + key + '-cancel">' + esc(t("cancel")) + "</button></div>";
+  }
+  function formSc() {
+    var g = "sc", h = '<div class="card"><p class="eyebrow">' + esc(t("grp_source")) + "</p>" + grid([
+      F(g + ".kv", "src_kv", "num", { list: ["24.9", "13.8", "12.47", "4.16", "0.48"] }),
+      F(g + ".fault", "src_fault", "num"), F(g + ".xr", "src_xr", "num"),
+      F(g + ".ztol", "z_tol", "chk")
+    ]) + "</div>";
+    return h + listCard("sc", "sc_path", "add_segment", "empty_list", S.sc.segs, function (c) {
+      return [c.name, N.opt(c.kind, S.lang), " " + SC_DETAIL[c.kind](c) + " · " + N.opt(c.device, S.lang) +
+        (c.aic_ka ? " " + fmtNum(c.aic_ka) + " kA" : "") + (c.motor_a ? " · M " + fmtNum(c.motor_a) + " A" : "")];
+    }, scEditor);
+  }
+  function scEditor() {
+    var d = "@draft.sc", k = UI.draft.sc.kind, f = [
+      F(d + ".name", "seg_name", "text"), F(d + ".kind", "seg_kind", "sel", { opts: ["xfmr", "cable", "busway"] })];
+    if (k === "xfmr") f.push(F(d + ".kva", "kva", "num", { list: T.XFMR_KVA_3PH.map(String) }), F(d + ".z_pct", "z_pct", "num"),
+      F(d + ".xr", "xr", "num"), F(d + ".sec_v", "sec_v", "num", { list: ["480", "208", "240"] }));
+    else if (k === "cable") f.push(F(d + ".length_ft", "length", "num"),
+      F(d + ".size", "cable_size", "sel", { opts: T.SIZES.filter(function (x) { return x !== "14" || UI.draft.sc.material === "cu"; }), lab: sizeLab }),
+      F(d + ".sets", "sets", "num"), F(d + ".material", "material", "sel", { opts: ["cu", "al"] }),
+      F(d + ".conduit", "conduit_mag", "sel", { opts: ["steel", "pvc"] }));
+    else f.push(F(d + ".length_ft", "length", "num"), F(d + ".material", "material", "sel", { opts: ["cu", "al"] }),
+      F(d + ".rating", "busway_rating_a", "sel", { opts: N.buswayRatings(UI.draft.sc.material, "bw_plugin").map(String), numeric: true }));
+    f.push(F(d + ".device", "device_type", "sel", { opts: T.SC_DEVICES }),
+      F(d + ".aic_ka", "aic_sel", "num", { list: ["0"].concat(T.AIC_RATINGS.map(String)) }),
+      F(d + ".motor_a", "motor_load", "num"));
+    return '<div class="item editing">' + grid(f) + editorButtons("sc") + "</div>";
+  }
+  function calcSc() {
+    var g = S.sc;
+    var src = N.scSource({ kv: num(g.kv, "src_kv"), fault_ka: num(g.fault || "0", "src_fault"), xr: num(g.xr, "src_xr"),
+      z_tol: !!g.ztol, edition: S.ed });
+    return N.designShortcircuit(src, g.segs.map(function (x) { return N.scSegment(x); }));
+  }
+  // ---- harmonics ----
+  function formHm() {
+    var g = "hm", h = '<div class="card"><p class="eyebrow">' + esc(t("grp_pcc")) + "</p>" + grid([
+      F(g + ".v", "pcc_v", "num", { list: ["480", "208", "600", "4160"] }), F(g + ".isc", "pcc_isc", "num"),
+      F(g + ".il", "pcc_il", "num"), F(g + ".lin", "linear_a", "num")
+    ]) + "</div>";
+    return h + listCard("hm", "drives", "add_drive", "empty_list", S.hm.drives, function (d) {
+      return [d.name, N.opt(d.drive_type, S.lang), " " + d.qty + " × " + fmtNum(d.hp) + " HP · " + fmtNum(d.load_pct) + " %" +
+        (d.thd_pct ? " · THDi " + fmtNum(d.thd_pct) + " %" : "")];
+    }, hmEditor);
+  }
+  function hmEditor() {
+    var d = "@draft.hm";
+    return '<div class="item editing">' + grid([
+      F(d + ".name", "col_name", "text", { wide: true }),
+      F(d + ".drive_type", "drive_type", "sel", { opts: T.HARM_DRIVE_TYPES, wide: true }),
+      F(d + ".qty", "col_qty", "num"), F(d + ".hp", "hp", "num", { list: T.MOTOR_HP }),
+      F(d + ".load_pct", "load_pct", "num"), F(d + ".input_a", "input_a", "num"),
+      F(d + ".thd_pct", "thd_pct", "num")
+    ]) + editorButtons("hm") + "</div>";
+  }
+  function calcHm() {
+    var g = S.hm;
+    return N.designHarmonics(N.harmInput({ voltage: num(g.v, "pcc_v"), isc_ka: num(g.isc, "pcc_isc"),
+      il_a: num(g.il || "0", "pcc_il"), linear_a: num(g.lin || "0", "linear_a"),
+      drives: g.drives.map(function (x) { return N.harmDrive(x); }), edition: S.ed }));
+  }
+
+  var FORMS = { br: formBranch, mo: formMotor, xf: formXfmr, mv: formMv, tr: formTray, lc: formLoad, sc: formSc, hm: formHm };
+  var CALCS = { br: calcBranch, mo: calcMotor, xf: calcXfmr, mv: calcMv, tr: calcTray, lc: calcLoad, sc: calcSc, hm: calcHm };
 
   // ------------------------------------------------------------------ results
   var KEY_FIELDS = {
@@ -659,8 +772,38 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     motor: [["ocpd", "s_ocpd_motor", "{v:.0f} A"], ["overload", "s_overload", "{v:.1f} A"], ["switch", "s_switch", "{v} A"]],
     transformer: [["pri_ocpd", "s_pri_ocpd", "{v} A"], ["sec_ocpd", "s_sec_ocpd", "{v} A"], ["isc_ka", "s_isc", "{v:.1f} kA"]],
     mv_cable: [["ampacity", "s_ampacity", "{v} A"], ["egc", "s_egc", "{v}"], ["conduit", "s_conduit", "{v}"]],
-    tray: [["tray_text", "s_tray", "{v}"], ["req_width", "s_req_width", "{v:.2f} in"]]
+    tray: [["tray_text", "s_tray", "{v}"], ["req_width", "s_req_width", "{v:.2f} in"]],
+    shortcircuit: [["max_fault_ka", "s_sc_max", "{v:.1f} kA"]],
+    harmonics: [["tdd", "s_h_tdd", "{v:.2f} %"], ["vthd", "s_h_vthd", "{v:.2f} %"], ["ahf_text", "s_h_ahf", "{v}"]]
   };
+  function okCell(ok) {
+    return ok === null || ok === undefined ? "<td>–</td>" :
+      '<td class="' + (ok ? "okc" : "ng") + '">' + esc(t(ok ? "ok" : "ng")) + "</td>";
+  }
+  function tableHtml(head, rows) {
+    return '<div class="tbl-wrap"><table class="cap"><thead><tr>' + head.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") +
+      "</tr></thead><tbody>" + rows.join("") + "</tbody></table></div>";
+  }
+  function extraTables(res) {
+    var s = res.summary;
+    if (res.kind === "shortcircuit")
+      return tableHtml([t("col_bus"), "V", t("col_isc") + " kA", t("col_xr"), t("col_req") + " kA", t("col_sel") + " kA", ""],
+        s.buses.map(function (b) {
+          return "<tr><td>" + esc(b.name) + "</td><td>" + fmtNum(b.volts) + "</td><td>" + b.total_ka.toFixed(1) + "</td><td>" +
+            (b.xr >= 999 ? "∞" : b.xr.toFixed(1)) + '</td><td' + (b.required_ka === null ? ' class="ng">&gt;200' : ">" + b.required_ka) +
+            "</td><td>" + (b.selected_ka ? fmtNum(b.selected_ka) : "–") + "</td>" + okCell(b.ok) + "</tr>";
+        }));
+    if (res.kind === "harmonics")
+      return tableHtml([t("col_h"), t("col_ih"), t("col_pct_il"), t("col_limit"), t("col_vh")], s.harmonics.map(function (r) {
+        var ng = r.pct > r.lim + 1e-9;
+        return "<tr><td>" + r.h + "</td><td>" + r.amps.toFixed(1) + "</td><td" + (ng ? ' class="ng"' : "") + ">" + r.pct.toFixed(2) +
+          "</td><td>" + fmtNum(r.lim) + "</td><td>" + r.vpct.toFixed(2) + "</td></tr>";
+      })) + (s.options.length ? tableHtml([t("col_option"), "TDD %", "V THD %", ""], s.options.map(function (o) {
+        return "<tr><td style=\"white-space:normal;min-width:180px\">" + esc(N.opt(o.code, S.lang)) + "</td><td>" + o.tdd.toFixed(2) +
+          "</td><td>" + o.vthd.toFixed(2) + "</td>" + okCell(o.ok) + "</tr>";
+      })) : "");
+    return "";
+  }
   function meter(label, value, limit, unit) {
     if (value === null || value === undefined || !limit) return "";
     var ratio = value / limit, state = ratio > 1 + 1e-9 ? "ng" : ratio > 0.85 ? "warn" : "";
@@ -689,8 +832,11 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     if (s.vd_pct !== undefined && s.vd_limit) m += meter(t("vd_meter"), s.vd_pct, s.vd_limit, "%");
     if (s.fill_pct !== undefined && s.fill_pct !== null) m += meter(t("fill_meter"), s.fill_pct, s.max_fill, "%");
     if (res.kind === "tray") m += meter(t("tray_meter"), s.fill_pct, 100, "%");
+    if (res.kind === "harmonics") m += meter(t("s_h_tdd"), s.tdd, s.tdd_limit, "%") + meter(t("s_h_vthd"), s.vthd, s.vthd_limit, "%");
     if (m) h += '<div class="meters">' + m + "</div>";
-    var steps = N.stepRows(res, S.lang), anyNg = steps.some(function (x) { return x.ok === false; });
+    h += extraTables(res);
+    var tabular = res.kind === "shortcircuit" || res.kind === "harmonics";
+    var steps = N.stepRows(res, S.lang), anyNg = !tabular && steps.some(function (x) { return x.ok === false; });
     var open = anyNg || UI.stepsOpen[key];
     h += '<details class="steps" data-steps="' + key + '"' + (open ? " open" : "") + "><summary>" + esc(t("steps")) + " (" + steps.length + ")</summary><ol class=\"steplist\">" +
       steps.map(function (x) {
@@ -837,6 +983,12 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     else v = el.value;
     setPath(path, v);
     if (path.indexOf("@draft") === 0) {
+      if (path === "@draft.sc.kind" || path === "@draft.sc.material") {
+        var dr = UI.draft.sc, rl = N.buswayRatings(dr.material, "bw_plugin");
+        if (rl.indexOf(Number(dr.rating)) < 0) dr.rating = rl[rl.length - 1];
+        if (dr.material === "al" && dr.size === "14") dr.size = "12";
+        rerenderForm();
+      }
       if (path === "@draft.tr.kind") {
         var sizes = trSizes(v);
         if (sizes.indexOf(UI.draft.tr.size) < 0) UI.draft.tr.size = sizes[Math.floor(sizes.length / 2)];
@@ -868,13 +1020,18 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     if (!b) return;
     var act = b.dataset.act, i = b.dataset.i !== undefined ? parseInt(b.dataset.i, 10) : null;
     var listKey = act.slice(0, 2), kind = act.slice(3);
-    if (act !== "lc-clear") UI.clearArm.lc = false;
-    if (act !== "tr-clear") UI.clearArm.tr = false;
+    ["lc", "tr", "sc", "hm"].forEach(function (k) { if (act !== k + "-clear") UI.clearArm[k] = false; });
     if (act === "copy") { copyResults(); return; }
     if (act === "tr-cap") { S.tr.show_cap = !S.tr.show_cap; save(); rerenderForm(); return; }
-    var listName = listKey === "lc" ? "loads" : "cables";
-    var maker = listKey === "lc" ? N.loadItem : N.trayCable;
-    if (kind === "new") { UI.edit[listKey] = "new"; UI.draft[listKey] = draftOf(listKey, maker({ name: listKey === "lc" ? "Load" : "Cable" })); }
+    var listName = { lc: "loads", tr: "cables", sc: "segs", hm: "drives" }[listKey];
+    var maker = { lc: N.loadItem, tr: N.trayCable, sc: N.scSegment, hm: N.harmDrive }[listKey];
+    var examples = { lc: EXAMPLE_LOADS, tr: EXAMPLE_CABLES, sc: EXAMPLE_SEGS, hm: EXAMPLE_DRIVES }[listKey];
+    if (!listName) return;
+    if (kind === "new") {
+      UI.edit[listKey] = "new";
+      UI.draft[listKey] = draftOf(listKey, maker({ name: { lc: "Load", tr: "Cable", sc: "PNL", hm: "VFD" }[listKey],
+        kind: listKey === "sc" ? "cable" : (listKey === "tr" ? "lv_multi" : undefined) }));
+    }
     else if (kind === "edit") { UI.edit[listKey] = i; UI.draft[listKey] = draftOf(listKey, S[listKey][listName][i]); }
     else if (kind === "cancel") { UI.edit[listKey] = null; UI.draft[listKey] = null; }
     else if (kind === "del") { S[listKey][listName].splice(i, 1); S[listKey].example = false; UI.edit[listKey] = null; }
@@ -888,7 +1045,7 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
       if (UI.edit[listKey] === "new") S[listKey][listName].push(item); else S[listKey][listName][UI.edit[listKey]] = item;
       S[listKey].example = false; UI.edit[listKey] = null; UI.draft[listKey] = null;
     } else if (kind === "example") {
-      S[listKey][listName] = (listKey === "lc" ? EXAMPLE_LOADS : EXAMPLE_CABLES).map(function (x) { return maker(x); });
+      S[listKey][listName] = examples.map(function (x) { return maker(x); });
       S[listKey].example = true; UI.edit[listKey] = null;
     } else if (kind === "clear") {
       if (!UI.clearArm[listKey]) { UI.clearArm[listKey] = true; rerenderForm(); return; }
@@ -901,10 +1058,19 @@ table.cap thead th { background: var(--surface-2); font-weight: 600; }
     if (listKey === "lc") {
       d.qty = String(d.qty); d.rating = String(d.rating); d.pf = String(d.pf); d.voltage = String(d.voltage);
       d.demand_factor = d.demand_factor === null || d.demand_factor === undefined ? "" : String(d.demand_factor);
-    } else { d.qty = String(d.qty); d.od_in = String(d.od_in || 0); }
+    } else if (listKey === "tr") { d.qty = String(d.qty); d.od_in = String(d.od_in || 0); }
+    else if (listKey === "sc") ["kva", "z_pct", "xr", "sec_v", "length_ft", "sets", "aic_ka", "motor_a"].forEach(function (k) { d[k] = String(d[k]); });
+    else if (listKey === "hm") ["qty", "hp", "load_pct", "input_a", "thd_pct"].forEach(function (k) { d[k] = String(d[k]); });
     return d;
   }
   function fromDraft(listKey, d) {
+    if (listKey === "sc") return N.scSegment({ name: d.name || "PNL", kind: d.kind, kva: num(d.kva, "kva"),
+      z_pct: num(d.z_pct, "z_pct"), xr: num(d.xr, "xr"), sec_v: num(d.sec_v, "sec_v"), length_ft: num(d.length_ft, "length"),
+      size: d.size, sets: Math.max(Math.trunc(num(d.sets, "sets")), 1), material: d.material, conduit: d.conduit,
+      rating: Number(d.rating), device: d.device, aic_ka: num(d.aic_ka || "0", "aic_sel"), motor_a: num(d.motor_a || "0", "motor_load") });
+    if (listKey === "hm") return N.harmDrive({ name: d.name || "VFD", drive_type: d.drive_type,
+      qty: Math.max(Math.trunc(num(d.qty, "col_qty")), 0), hp: num(d.hp, "hp"), load_pct: num(d.load_pct, "load_pct"),
+      input_a: num(d.input_a || "0", "input_a"), thd_pct: num(d.thd_pct || "0", "thd_pct") });
     if (listKey === "lc") return N.loadItem({ name: d.name || "Load", category: d.category, qty: Math.max(Math.trunc(num(d.qty, "col_qty")), 0),
       rating: num(d.rating, "col_rating"), unit: d.unit, pf: num(d.pf, "pf"), voltage: num(d.voltage, "col_v"),
       phases: Number(d.phases), continuous: !!d.continuous, demand_factor: num(d.demand_factor, "df_auto", true),

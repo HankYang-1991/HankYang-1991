@@ -69,6 +69,11 @@ function runCase(c) {
     case "design_tray":
       return run(() => serResult(N.designTray(N.trayInput(Object.assign({}, a.x,
         { cables: a.x.cables.map(N.trayCable) })))));
+    case "shortcircuit":
+      return run(() => serResult(N.designShortcircuit(N.scSource(a.src), a.segs.map(N.scSegment))));
+    case "harmonics":
+      return run(() => serResult(N.designHarmonics(N.harmInput(Object.assign({}, a.x,
+        { drives: a.x.drives.map(N.harmDrive) })))));
     case "capacity":
       return { ok: N.capacityTable(a.kind, null, null, a.kw) };
     case "format":

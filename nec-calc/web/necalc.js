@@ -1148,6 +1148,261 @@
   }
 
   // ------------------------------------------------------------------
+  // short circuit / interrupting rating (shortcircuit.py)
+  // ------------------------------------------------------------------
+  var XR_INF = 999;
+  function scSource(o) {
+    return Object.assign({ kv: 24.9, fault_ka: 0, xr: 15, z_tol: true, edition: "2023" }, o || {});
+  }
+  function scSegment(o) {
+    return Object.assign({ name: "MSB", kind: "xfmr", kva: 2500, z_pct: 5.75, xr: 8, sec_v: 480,
+      length_ft: 50, size: "500", sets: 1, material: "cu", conduit: "steel", rating: 2000,
+      device: "lvpcb", aic_ka: 0, motor_a: 0 }, o || {});
+  }
+  function deviceTestXr(device, ka) {
+    if (device === "lvpcb") return T.SC_TEST_XR.pf15;
+    if (device === "mccb") {
+      if (ka <= 10) return T.SC_TEST_XR.pf50;
+      if (ka <= 20) return T.SC_TEST_XR.pf30;
+    }
+    return T.SC_TEST_XR.pf20;
+  }
+  function asymFactor(xr, device, ka) {
+    var xrt = deviceTestXr(device, ka), mf;
+    if (xr <= xrt) return 1;
+    if (device === "lvpcb")
+      mf = Math.sqrt(1 + 2 * Math.exp(-2 * Math.PI / xr)) / Math.sqrt(1 + 2 * Math.exp(-2 * Math.PI / xrt));
+    else mf = (1 + Math.exp(-Math.PI / xr)) / (1 + Math.exp(-Math.PI / xrt));
+    return Math.max(mf, 1);
+  }
+  function requiredAic(total, xr, device) {
+    for (var i = 0; i < T.AIC_RATINGS.length; i++) {
+      var r = T.AIC_RATINGS[i], mf = asymFactor(xr, device, r);
+      if (r * 1000 >= total * mf - 1e-6) return [r, mf];
+    }
+    return [null, asymFactor(xr, device, T.AIC_RATINGS[T.AIC_RATINGS.length - 1])];
+  }
+  function designShortcircuit(src, segs) {
+    var ed = src.edition, res = new Result("shortcircuit");
+    if (!segs.length) throw new CalcError("err_sc_empty", {});
+    var v = src.kv * 1000, rT, xT;
+    if (src.fault_ka) {
+      var zs = v / (SQRT3 * src.fault_ka * 1000);
+      rT = zs / Math.sqrt(1 + src.xr * src.xr); xT = rT * src.xr;
+      res.add("st_sc_source", ref("sc_source", ed), null, { kv: src.kv, ka: src.fault_ka, xr: src.xr, z: zs * 1000 });
+    } else {
+      rT = 0; xT = 0;
+      res.add("st_sc_infinite", ref("sc_source", ed), null, { kv: src.kv });
+      res.warn("w_sc_infinite", {});
+    }
+    var buses = [], labelled = false;
+    segs.forEach(function (seg) {
+      if (seg.kind === "xfmr") {
+        var ratio = seg.sec_v / v;
+        rT *= ratio * ratio; xT *= ratio * ratio;
+        var tol = src.z_tol ? T.SC_Z_TOLERANCE : 1;
+        var zt = seg.z_pct / 100 * seg.sec_v * seg.sec_v / (seg.kva * 1000) * tol;
+        var rt = zt / Math.sqrt(1 + seg.xr * seg.xr), xt = rt * seg.xr;
+        rT += rt; xT += xt; v = seg.sec_v;
+        res.add("st_sc_xfmr", ref("sc_xfmr", ed), null, { name: seg.name, kva: seg.kva, z: seg.z_pct, tol: tol,
+          xr: seg.xr, r: rt * 1000, x: xt * 1000, volts: seg.sec_v });
+      } else {
+        if (v > 1000) throw new CalcError("err_sc_mv_segment", { name: seg.name });
+        var t0 = T.SC_COND_T0[seg.material], rr, xx, f;
+        if (seg.kind === "cable") {
+          var t9 = table9Impedance(seg.size, seg.material, seg.conduit === "pvc" ? "PVC40" : "RMC");
+          f = (t0 + T.SC_COND_TEMP) / (t0 + 75);
+          var sets = Math.max(Math.trunc(seg.sets), 1);
+          rr = t9[0] * f * seg.length_ft / 1000 / sets; xx = t9[1] * seg.length_ft / 1000 / sets;
+          res.add("st_sc_cable", ref("sc_cable", ed), null, { name: seg.name, sets: sets, size: seg.size,
+            length: seg.length_ft, r: rr * 1000, x: xx * 1000, corr: f });
+        } else {
+          var row = T.ILINE_IMPEDANCE[seg.material][String(seg.rating)];
+          if (!row) throw new CalcError("err_busway_data", { rating: seg.rating });
+          f = (t0 + T.SC_COND_TEMP) / (t0 + 80);
+          rr = row[0] / 1000 * f * seg.length_ft / 100; xx = row[1] / 1000 * seg.length_ft / 100;
+          res.add("st_sc_busway", ref("sc_busway", ed), null, { name: seg.name, rating: seg.rating,
+            length: seg.length_ft, r: rr * 1000, x: xx * 1000, corr: f });
+        }
+        rT += rr; xT += xx;
+      }
+      var z = Math.hypot(rT, xT);
+      if (z <= 0) throw new CalcError("err_sc_infinite_bus", { name: seg.name });
+      var isc = v / (SQRT3 * z), xr = rT > 0 ? Math.min(xT / rT, XR_INF) : XR_INF;
+      var motor = T.SC_MOTOR_MULT * seg.motor_a, total = isc + motor;
+      res.add("st_sc_bus", ref("sc_bus", ed), null, { name: seg.name, volts: v, r: rT * 1000, x: xT * 1000,
+        xr: xr, isc: isc / 1000, motor: motor / 1000, total: total / 1000 });
+      var rq = requiredAic(total, xr, seg.device), req = rq[0];
+      if (req === null) {
+        res.add("st_sc_required_none", ref("sc_series", ed), false, { name: seg.name, dev: seg.device, mf: rq[1],
+          adj: total * rq[1] / 1000 });
+        res.warn("w_sc_exceeds", { name: seg.name, ka: total / 1000 });
+      } else res.add("st_sc_required", ref("sc_device", ed), null, { name: seg.name, dev: seg.device,
+        xrt: deviceTestXr(seg.device, req), mf: rq[1], adj: total * rq[1] / 1000, req: req });
+      var ok = null;
+      if (seg.aic_ka) {
+        var mfs = asymFactor(xr, seg.device, seg.aic_ka);
+        ok = seg.aic_ka * 1000 >= total * mfs - 1e-6;
+        res.add("st_sc_aic", ref("sc_device", ed), ok, { name: seg.name, aic: seg.aic_ka, mf: mfs, adj: total * mfs / 1000 });
+      }
+      if (!labelled && v <= 1000) {
+        labelled = true;
+        res.add("st_sc_label", ref("sc_label", ed), null, { name: seg.name, total: total / 1000 });
+      }
+      buses.push({ name: seg.name, volts: v, isc_ka: isc / 1000, motor_ka: motor / 1000, total_ka: total / 1000,
+        xr: xr, required_ka: req, selected_ka: seg.aic_ka || null, ok: ok });
+    });
+    if (segs.some(function (s) { return s.motor_a; })) res.warn("w_sc_motor", {});
+    Object.assign(res.summary, { buses: buses, bus_count: buses.length,
+      max_fault_ka: Math.max.apply(null, buses.map(function (b) { return b.total_ka; })),
+      all_ok: buses.every(function (b) { return b.ok !== false && b.required_ka !== null; }) });
+    return res;
+  }
+
+  // ------------------------------------------------------------------
+  // harmonics (harmonics.py)
+  // ------------------------------------------------------------------
+  var MITIGATIONS = [
+    ["mit_ac5", { "6p": "6p_ac5" }],
+    ["mit_passive", { "6p": "6p_passive", "6p_ac3": "6p_passive", "6p_ac5": "6p_passive", "6p_dc": "6p_passive" }],
+    ["mit_18p", { "6p": "18p", "6p_ac3": "18p", "6p_ac5": "18p", "6p_dc": "18p" }]
+  ];
+  function harmDrive(o) {
+    return Object.assign({ name: "VFD-1", qty: 1, hp: 50, drive_type: "6p_ac3", load_pct: 100, input_a: 0,
+      thd_pct: 0 }, o || {});
+  }
+  function harmInput(o) {
+    return Object.assign({ voltage: 480, isc_ka: 50, il_a: 0, linear_a: 0, drives: [], edition: "2023" }, o || {});
+  }
+  function spectrumThd(kind) {
+    var sp = T.HARM_SPECTRA[kind];
+    return Math.sqrt(sum(Object.keys(sp).map(function (h) { return sp[h] * sp[h]; })));
+  }
+  function driveFundamental(d, v) {
+    var load = d.load_pct / 100, unit;
+    if (d.input_a) unit = d.input_a * load;
+    else unit = d.hp * 0.746 * load / T.HARM_DRIVE_EFF * 1000 / (SQRT3 * v * T.HARM_DPF[d.drive_type]);
+    return unit * Math.max(Math.trunc(d.qty), 0);
+  }
+  function driveHarmonics(d, kind, v, useOverride) {
+    var i1 = driveFundamental(d, v), sp = T.HARM_SPECTRA[kind], scale = 1, out = {};
+    if (useOverride && d.thd_pct) scale = d.thd_pct / spectrumThd(kind);
+    T.HARM_ORDERS.forEach(function (h) { out[h] = i1 * sp[String(h)] / 100 * scale; });
+    return out;
+  }
+  function ieee519CurrentLimits(ratio) {
+    for (var i = 0; i < T.IEEE519_I_LIMITS.length; i++)
+      if (ratio < T.IEEE519_I_LIMITS[i][0]) return [T.IEEE519_I_LIMITS[i][1], T.IEEE519_I_LIMITS[i][2]];
+    var l = T.IEEE519_I_LIMITS[T.IEEE519_I_LIMITS.length - 1];
+    return [l[1], l[2]];
+  }
+  function individualLimit(h, ind) {
+    var b = T.IEEE519_H_BANDS;
+    for (var k = 0; k < b.length - 1; k++) if (b[k] <= h && h < b[k + 1]) return ind[k];
+    return ind[ind.length - 1];
+  }
+  function voltageLimits(v) {
+    var kv = v / 1000;
+    for (var i = 0; i < T.IEEE519_V_LIMITS.length; i++)
+      if (kv <= T.IEEE519_V_LIMITS[i][0]) return [T.IEEE519_V_LIMITS[i][1], T.IEEE519_V_LIMITS[i][2]];
+    var l = T.IEEE519_V_LIMITS[T.IEEE519_V_LIMITS.length - 1];
+    return [l[1], l[2]];
+  }
+  function analyzeHarm(x, kinds, useOverride) {
+    if (useOverride === undefined) useOverride = true;
+    var ih = {}, i1 = 0;
+    T.HARM_ORDERS.forEach(function (h) { ih[h] = 0; });
+    x.drives.forEach(function (d, n) {
+      var kind = kinds ? kinds[n] : d.drive_type;
+      var hs = driveHarmonics(d, kind, x.voltage, useOverride && kind === d.drive_type);
+      T.HARM_ORDERS.forEach(function (h) { ih[h] += hs[h]; });
+      i1 += driveFundamental(d, x.voltage);
+    });
+    var il = x.il_a || (i1 + x.linear_a);
+    if (il <= 0) throw new CalcError("err_h_no_load", {});
+    var isc = x.isc_ka * 1000, ratio = isc / il, lim = ieee519CurrentLimits(ratio);
+    var hRms = Math.sqrt(sum(T.HARM_ORDERS.map(function (h) { return ih[h] * ih[h]; })));
+    var vh = {};
+    T.HARM_ORDERS.forEach(function (h) { vh[h] = 100 * h * ih[h] / isc; });
+    var vthd = Math.sqrt(sum(T.HARM_ORDERS.map(function (h) { return vh[h] * vh[h]; })));
+    var iF = i1 + x.linear_a;
+    var kNum = iF * iF + sum(T.HARM_ORDERS.map(function (h) { return ih[h] * ih[h] * h * h; }));
+    var kDen = iF * iF + hRms * hRms;
+    return { ih: ih, i1: i1, il: il, isc: isc, ratio: ratio, ind: lim[0], tdd_lim: lim[1], h_rms: hRms,
+      tdd: 100 * hRms / il, vh: vh, vthd: vthd, k: kDen ? kNum / kDen : 1 };
+  }
+  function harmCompliant(a, vInd, vThd) {
+    var okI = T.HARM_ORDERS.every(function (h) { return 100 * a.ih[h] / a.il <= individualLimit(h, a.ind) + 1e-9; });
+    var vmax = Math.max.apply(null, T.HARM_ORDERS.map(function (h) { return a.vh[h]; }));
+    return okI && a.tdd <= a.tdd_lim + 1e-9 && a.vthd <= vThd + 1e-9 && vmax <= vInd + 1e-9;
+  }
+  function ahfSize(req) {
+    if (req <= 0) return [0, 0];
+    for (var i = 0; i < T.AHF_SIZES.length; i++) if (T.AHF_SIZES[i] >= req - 1e-9) return [1, T.AHF_SIZES[i]];
+    var big = T.AHF_SIZES[T.AHF_SIZES.length - 1];
+    return [Math.ceil(req / big - 1e-9), big];
+  }
+  function designHarmonics(x) {
+    var ed = x.edition, res = new Result("harmonics");
+    var drives = x.drives.filter(function (d) { return d.qty > 0; });
+    if (!drives.length) throw new CalcError("err_h_empty", {});
+    x.drives = drives;
+    drives.forEach(function (d) {
+      res.add("st_h_drive", ref("h_drive", ed), null, { name: d.name, qty: d.qty, hp: d.hp, kind: d.drive_type,
+        load: d.load_pct, i1: driveFundamental(d, x.voltage), thd: d.thd_pct || spectrumThd(d.drive_type) });
+    });
+    var a = analyzeHarm(x), vl = voltageLimits(x.voltage), vInd = vl[0], vThd = vl[1];
+    res.add("st_h_il", ref("h_limits", ed), null, { il: a.il, src: x.il_a ? "il_given" : "il_connected",
+      isc: x.isc_ka, ratio: a.ratio, tdd: a.tdd_lim });
+    if (!x.il_a) res.warn("w_h_il_connected", {});
+    T.HARM_ORDERS.forEach(function (h) {
+      var pct = 100 * a.ih[h] / a.il, lim = individualLimit(h, a.ind);
+      res.add("st_h_order", ref("h_limits", ed), pct <= lim + 1e-9, { h: h, amps: a.ih[h], pct: pct, lim: lim });
+    });
+    res.add("st_h_tdd", ref("h_limits", ed), a.tdd <= a.tdd_lim + 1e-9, { rms: a.h_rms, tdd: a.tdd, lim: a.tdd_lim });
+    var vmax = Math.max.apply(null, T.HARM_ORDERS.map(function (h) { return a.vh[h]; }));
+    res.add("st_h_vthd", ref("h_vlimits", ed), a.vthd <= vThd + 1e-9 && vmax <= vInd + 1e-9,
+      { vthd: a.vthd, lim: vThd, vmax: vmax, vlim: vInd });
+    var kr = T.K_RATINGS[T.K_RATINGS.length - 1];
+    for (var ki = 0; ki < T.K_RATINGS.length; ki++) if (T.K_RATINGS[ki] >= a.k - 1e-9) { kr = T.K_RATINGS[ki]; break; }
+    res.add("st_h_k", ref("h_kfactor", ed), null, { k: a.k, kr: kr });
+    var compliant = harmCompliant(a, vInd, vThd), options = [];
+    MITIGATIONS.forEach(function (m) {
+      var kinds = drives.map(function (d) { return m[1][d.drive_type] || d.drive_type; });
+      if (kinds.every(function (k, i) { return k === drives[i].drive_type; })) return;
+      var b = analyzeHarm(x, kinds), ok = harmCompliant(b, vInd, vThd);
+      res.add("st_h_option", ref("h_mitigation", ed), ok, { opt: m[0], tdd: b.tdd, vthd: b.vthd });
+      options.push({ code: m[0], tdd: b.tdd, vthd: b.vthd, ok: ok });
+    });
+    var kNeed = 0;
+    if (a.h_rms > 0) {
+      kNeed = Math.max(0, 1 - T.AHF_TARGET * a.tdd_lim * a.il / 100 / a.h_rms);
+      T.HARM_ORDERS.forEach(function (h) {
+        var amp = a.ih[h];
+        if (amp > 0) kNeed = Math.max(kNeed, 1 - T.AHF_TARGET * individualLimit(h, a.ind) * a.il / 100 / amp);
+        var vlimA = T.AHF_TARGET * vInd * a.isc / (100 * h);
+        if (amp > 0) kNeed = Math.max(kNeed, 1 - vlimA / amp);
+      });
+      var kV = a.vthd ? 1 - T.AHF_TARGET * vThd / a.vthd : 0;
+      kNeed = Math.min(Math.max(kNeed, kV, 0), 1);
+    }
+    var req = kNeed * a.h_rms, sz = ahfSize(req), ahfText;
+    if (sz[0]) {
+      res.add("st_h_ahf", ref("h_ahf", ed), null, { rms: a.h_rms, k: kNeed * 100, req: req, units: sz[0], frame: sz[1],
+        tdd: a.tdd * (1 - kNeed), vthd: a.vthd * (1 - kNeed) });
+      ahfText = sz[0] > 1 ? sz[0] + " x " + sz[1] + " A" : sz[1] + " A";
+    } else { res.add("st_h_ahf_none", ref("h_ahf", ed), null, {}); ahfText = "-"; }
+    res.warn("w_h_typical", {});
+    if (drives.some(function (d) { return d.input_a === 0; })) res.warn("w_h_estimated", {});
+    Object.assign(res.summary, { tdd: a.tdd, tdd_limit: a.tdd_lim, vthd: a.vthd, vthd_limit: vThd, ratio: a.ratio,
+      il: a.il, k_factor: a.k, k_rated: kr, ahf_req: req, ahf_text: ahfText, compliant: compliant,
+      harmonics: T.HARM_ORDERS.map(function (h) { return { h: h, amps: a.ih[h], pct: 100 * a.ih[h] / a.il,
+        lim: individualLimit(h, a.ind), vpct: a.vh[h] }; }),
+      options: options });
+    return res;
+  }
+
+  // ------------------------------------------------------------------
   // text: Python str.format subset + translation
   // ------------------------------------------------------------------
   function group(intStr) { return intStr.replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
@@ -1240,7 +1495,11 @@
       ["wire_text", "s_mv_cable", "{v}"], ["ampacity", "s_ampacity", "{v} A"],
       ["sc_cmil", "s_sc_cmil", "{v:,.0f} cmil"], ["jam", "s_jam", "{v:.2f}"]],
     tray: [["tray_text", "s_tray", "{v}"], ["req_width", "s_req_width", "{v:.2f} in"],
-      ["fill_pct", "s_tray_fill", "{v:.0f} %"]]
+      ["fill_pct", "s_tray_fill", "{v:.0f} %"]],
+    shortcircuit: [["max_fault_ka", "s_sc_max", "{v:.1f} kA"], ["bus_count", "s_sc_buses", "{v}"]],
+    harmonics: [["tdd", "s_h_tdd", "{v:.2f} %"], ["tdd_limit", "s_h_tdd_lim", "{v:g} %"],
+      ["vthd", "s_h_vthd", "{v:.2f} %"], ["ratio", "s_h_ratio", "{v:.0f}"], ["k_factor", "s_h_k", "{v:.2f}"],
+      ["ahf_text", "s_h_ahf", "{v}"]]
   };
   SUMMARY_FIELDS.feeder = SUMMARY_FIELDS.primary = SUMMARY_FIELDS.secondary = SUMMARY_FIELDS.general;
 
@@ -1297,6 +1556,8 @@
     cableOd: cableOd, cableArea: cableArea, odIsTypical: odIsTypical,
     requiredWidth: requiredWidth, designTray: designTray, trayAmpacity: trayAmpacity,
     maxCables: maxCables, capacityTable: capacityTable, capacitySizes: capacitySizes,
+    scSource: scSource, scSegment: scSegment, designShortcircuit: designShortcircuit,
+    harmDrive: harmDrive, harmInput: harmInput, designHarmonics: designHarmonics,
     tr: tr, opt: opt, pyFormat: pyFormat, fmtG: fmtG, summaryRows: summaryRows,
     stepRows: stepRows, warningRows: warningRows, loadSummaryRows: loadSummaryRows,
     loadNotes: loadNotes
