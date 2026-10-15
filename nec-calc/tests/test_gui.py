@@ -61,6 +61,66 @@ class GuiSmokeTest(unittest.TestCase):
         finally:
             root.destroy()
 
+    def test_panels_excel(self):
+        import shutil
+        import tempfile
+        from unittest import mock
+        from necalc import panel_io as PIO
+        from necalc.gui import App
+        d = tempfile.mkdtemp()
+        root = tk.Tk()
+        try:
+            app = App(root)
+            with mock.patch("necalc.gui.messagebox.showinfo"), \
+                    mock.patch("necalc.gui.messagebox.askyesno",
+                               return_value=True):
+                tpl = os.path.join(d, "tpl.xlsx")
+                app.export_template(tpl)
+                app.import_excel(tpl, replace=True)
+                self.assertEqual([p.name for p in app.panels],
+                                 ["LP-1", "DP-1"])
+                self.assertIn("lc", app.results)
+                self.assertEqual(app.v["lc.name"].get(), "LP-1")
+                app.panel_select(1)
+                self.assertEqual(app.v["lc.system"].get(), "480Y/277")
+                self.assertEqual(app.v["lc.flen"].get(), "150")
+                app.calc_feeder()
+                self.assertEqual(
+                    app.results["lc"][1].__name__, "draw")
+                app.panel_new()
+                self.assertEqual(len(app.panels), 3)
+                app.v["lc.name"].set("LP-NEW")
+                self.assertEqual(app.panels[2].name, "LP-NEW")
+                app.load_example()
+                app.calc_all()
+                out = os.path.join(d, "out.xlsx")
+                app.export_excel(out)
+                panels, notes = PIO.read_panels(out)
+                self.assertEqual([p.name for p in panels],
+                                 ["LP-1", "DP-1", "LP-NEW"])
+                app.panel_delete()
+                self.assertEqual(len(app.panels), 2)
+                # merge: same names are replaced, new names added
+                app.import_excel(out, replace=False)
+                self.assertEqual([p.name for p in app.panels],
+                                 ["LP-1", "DP-1", "LP-NEW"])
+                for lang in ("zh", "en"):
+                    app.v["lang"].set(lang)
+                    app.on_lang()
+                    self.assertIn("lc", app.results)
+                app.on_edition()
+                pd = app.project_dict()
+                app.load_project_dict(pd)
+                self.assertEqual(len(app.panels), 3)
+                # version-1 project files hold one panel in the vars
+                pd1 = {"vars": pd["vars"], "panel_loads": pd["panel_loads"]}
+                app.load_project_dict(pd1)
+                self.assertEqual(len(app.panels), 1)
+                self.assertEqual(app.panels[0].name, app.v["lc.name"].get())
+        finally:
+            root.destroy()
+            shutil.rmtree(d, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

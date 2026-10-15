@@ -49,6 +49,7 @@ class Load:
     demand_factor: Optional[float] = None  # None -> automatic
     phase_conn: str = "auto"
     hp: str = ""                    # for unit == "HP"
+    circuit: str = ""               # circuit number(s), informational
 
     # ---- connected values -------------------------------------------
     def kva(self):
@@ -110,6 +111,7 @@ class Panel:
     target_pf: float = 0.95
     loads: list = field(default_factory=list)
     edition: str = "2023"
+    feeder_length_ft: float = 0.0   # 0 -> use the feeder wiring setting
 
     def to_dict(self):
         d = asdict(self)
@@ -120,6 +122,24 @@ class Panel:
         p = cls(**{k: v for k, v in d.items() if k != "loads"})
         p.loads = [Load(**ld) for ld in d.get("loads", [])]
         return p
+
+
+EXAMPLE_LOADS = [
+    Load("Office lighting", "lighting", 12, 600, "VA", 0.95, voltage=120,
+         continuous=True, circuit="1,3,5"),
+    Load("General receptacles", "receptacle", 60, 180, "VA", 0.9,
+         voltage=120, circuit="7-17"),
+    Load("AHU-1 supply fan", "motor", 1, 10, "HP", 0.85, voltage=208,
+         phases=3, circuit="19,21,23"),
+    Load("EF-1 exhaust fan", "motor", 2, 1, "HP", 0.8, voltage=208,
+         phases=3, circuit="25-35"),
+    Load("Unit heater", "heating", 2, 5, "kW", 1.0, voltage=208, phases=1,
+         circuit="2-8"),
+    Load("Split A/C", "cooling", 1, 7.5, "kVA", 0.88, voltage=208,
+         phases=3, circuit="10,12,14"),
+    Load("Water heater", "equipment", 1, 4.5, "kW", 1.0, voltage=208,
+         phases=1, continuous=True, circuit="16,18"),
+]
 
 
 def _phases_for(load: Load, panel_phases, wiring):

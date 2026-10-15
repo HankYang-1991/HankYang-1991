@@ -199,14 +199,15 @@ def to_html(res_list, lang="en", edition="2023", inputs=None):
 # ---------------------------------------------------------------------------
 # Load calculation output
 # ---------------------------------------------------------------------------
-LOAD_COLS = ["col_name", "col_cat", "col_qty", "col_rating", "col_unit",
+LOAD_COLS = ["col_ckt", "col_name", "col_cat", "col_qty", "col_rating", "col_unit",
              "col_pf", "col_v", "col_ph", "col_cont", "col_conn", "col_kw",
              "col_kva", "col_df", "col_dkva", "col_amps"]
 
 
 def load_row_values(r, lang):
     ld = r["load"]
-    return [ld.name, tr("opt_" + ld.category, lang), ld.qty, f"{ld.rating:g}",
+    return [ld.circuit, ld.name, tr("opt_" + ld.category, lang), ld.qty,
+            f"{ld.rating:g}",
             ld.unit, f"{ld.pf:.2f}", f"{ld.voltage:g}", ld.phases,
             tr("opt_yes" if ld.continuous else "opt_no", lang),
             r.get("phase", ""), f"{r['kw']:.2f}", f"{r['kva']:.2f}",

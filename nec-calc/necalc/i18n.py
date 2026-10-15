@@ -114,6 +114,7 @@ TEXT = {
     "clear": ("Clear all", "全部清除"),
     "load_example": ("Load example", "載入範例"),
     "size_feeder": ("Size feeder", "選定幹線"),
+    "col_ckt": ("Ckt", "迴路"),
     "col_name": ("Description", "名稱"),
     "col_cat": ("Category", "類別"),
     "col_qty": ("Qty", "數量"),
@@ -909,6 +910,246 @@ TEXT = {
         "已知銘牌輸入電流時請輸入"),
     "err_h_empty": ("Add at least one drive", "請至少新增一台變頻器"),
     "err_h_no_load": ("PCC load current is zero", "PCC 負載電流為零"),
+
+    # ---------------- Excel / CSV panel list ----------------
+    "panel_list": ("Panels", "盤清單"),
+    "new_panel": ("New panel", "新增盤"),
+    "delete_panel": ("Delete panel", "刪除盤"),
+    "feeder_len_panel": ("Feeder length ft (blank = wiring tab)",
+                         "幹線長度 ft (空白=依配線頁)"),
+    "import_excel": ("Import Excel / CSV", "匯入 Excel / CSV"),
+    "export_excel": ("Export Excel", "匯出 Excel"),
+    "excel_template": ("Excel template", "Excel 範本"),
+    "calc_all_panels": ("Calculate all panels", "計算全部盤"),
+    "all_panels_title": ("All panels", "全部盤"),
+    "import_replace_q": (
+        "Replace the current panels with the {n} imported panel(s)?\n\n"
+        "Yes = replace all\nNo = add, and update panels with the same name",
+        "以匯入的 {n} 個盤取代目前所有盤？\n\n是 = 全部取代\n否 = 新增，同名的盤則更新"),
+    "imported_n": ("Imported {panels} panel(s) and {loads} load row(s) "
+                   "from {file}", "已從 {file} 匯入 {panels} 個盤、{loads} 筆負載"),
+    "import_notes": ("Import notes", "匯入注意事項"),
+    "confirm_delete_panel": ("Delete panel {name} and its {n} load row(s)?",
+                             "刪除盤 {name} 及其 {n} 筆負載？"),
+    "ps_conn": ("Conn. kVA", "連接kVA"),
+    "ps_dem": ("Demand kVA", "需量kVA"),
+    "ps_coin": ("Coinc. kVA", "同時kVA"),
+    "ps_design": ("Design kVA", "設計kVA"),
+    "ps_amps": ("Design A", "設計A"),
+    "ps_ocpd": ("OCPD A", "保護器A"),
+    "ps_vd": ("VD %", "壓降%"),
+    "ps_feeder": ("Feeder", "幹線"),
+    "xl_panel": ("Panel", "盤名"),
+    "xl_circuit": ("Circuit", "迴路"),
+    "xl_name": ("Description", "負載名稱"),
+    "xl_cat": ("Category", "類別"),
+    "xl_qty": ("Qty", "數量"),
+    "xl_rating": ("Rating (per unit)", "額定 (每台)"),
+    "xl_unit": ("Unit", "單位"),
+    "xl_pf": ("PF", "功率因數"),
+    "xl_v": ("Voltage (V)", "電壓 (V)"),
+    "xl_ph": ("Phases", "相數"),
+    "xl_cont": ("Continuous", "連續負載"),
+    "xl_df": ("Demand factor (blank = auto)", "需量因數 (空白=自動)"),
+    "xl_conn": ("Phase connection", "接相"),
+    "xl_system": ("System", "系統"),
+    "xl_div": ("Diversity factor", "參差因數"),
+    "xl_tpf": ("Target PF", "目標功率因數"),
+    "xl_flen": ("Feeder length (ft, blank = program setting)",
+                "幹線長度 (ft，空白=依程式設定)"),
+    "xl_sh_panels": ("Panels", "盤清單"),
+    "xl_sh_loads": ("Loads", "負載清單"),
+    "xl_sh_summary": ("Summary", "彙總"),
+    "xl_sh_instr": ("Instructions", "說明"),
+    "xl_title_summary": ("Panel load summary", "盤負載彙總"),
+    "xl_note_generated": (
+        "NEC Electrical Calculator, NFPA 70 (NEC) {ed}, {date}. Values are "
+        "calculated by the program (NEC tables); totals use SUM formulas. "
+        "Edit the Panels / Loads sheets and import the file again to "
+        "recalculate.",
+        "NEC 電氣計算軟體，NFPA 70 (NEC) {ed}，{date}。數值由程式依 NEC 表格"
+        "計算，合計列使用 SUM 公式。修改「盤清單」/「負載清單」後重新匯入即可重算。"),
+    "xl_nloads": ("Load rows", "負載筆數"),
+    "xl_conn_kw": ("Connected kW", "連接 kW"),
+    "xl_conn_kvar": ("Connected kvar", "連接 kvar"),
+    "xl_conn_kva": ("Connected kVA", "連接 kVA"),
+    "xl_conn_pf": ("Connected PF", "連接功因"),
+    "xl_dem_kva": ("Demand kVA (after DF)", "需量 kVA (乘需量因數)"),
+    "xl_overall_df": ("Overall DF", "整體需量因數"),
+    "xl_coin_kva": ("Coincident kVA (÷ diversity)", "同時需量 kVA (÷參差)"),
+    "xl_cont_kva": ("Continuous kVA", "連續負載 kVA"),
+    "xl_motor_kva": ("Largest motor kVA", "最大馬達 kVA"),
+    "xl_design_kva": ("Feeder design kVA", "幹線設計 kVA"),
+    "xl_design_a": ("Design current (A)", "設計電流 (A)"),
+    "xl_pha": ("Phase A (A)", "A 相 (A)"),
+    "xl_phb": ("Phase B (A)", "B 相 (A)"),
+    "xl_phc": ("Phase C (A)", "C 相 (A)"),
+    "xl_imb": ("Imbalance %", "不平衡率 %"),
+    "xl_cap": ("Capacitor kvar (to target PF)", "電容 kvar (至目標功因)"),
+    "xl_ocpd": ("Feeder OCPD (A)", "幹線保護器 (A)"),
+    "xl_feeder": ("Feeder conductors / busway", "幹線線材 / 匯流排槽"),
+    "xl_vd": ("Voltage drop %", "電壓降 %"),
+    "xl_status": ("Status", "狀態"),
+    "xl_ok": ("OK", "正常"),
+    "xl_total": ("Total", "合計"),
+    "xl_total_note": (
+        "Totals are arithmetic sums of the panels; no diversity between "
+        "panels is applied.", "合計為各盤算術和，未計入盤與盤之間的參差。"),
+    "xl_title_panel": ("Panel {name} — {system}", "盤 {name} — {system}"),
+    "xl_panel_meta": ("Diversity {div} · Target PF {tpf} · NFPA 70 (NEC) {ed}",
+                      "參差因數 {div} · 目標功因 {tpf} · NFPA 70 (NEC) {ed}"),
+    "xl_conn_used": ("Phase (assigned)", "接相 (配置結果)"),
+    "xl_kw": ("kW", "kW"),
+    "xl_kvar": ("kvar", "kvar"),
+    "xl_kva": ("kVA", "kVA"),
+    "xl_dfv": ("DF used", "採用需量因數"),
+    "xl_dkva": ("Demand kVA", "需量 kVA"),
+    "xl_amps": ("Current (A)", "電流 (A)"),
+    "xl_sched_note": (
+        "Calculated by the program; edit the Loads sheet and re-import to "
+        "recalculate.", "由程式計算；請修改「負載清單」後重新匯入以重算。"),
+    "xl_ins_title": ("Panel load list – how to use", "盤負載清單 – 使用說明"),
+    "xl_note_template": (
+        "Template for the NEC Electrical Calculator (NFPA 70 {ed}).",
+        "NEC 電氣計算軟體範本 (NFPA 70 {ed})。"),
+    "xl_ins_1": (
+        "1. List every panel on the Panels sheet: name, system, diversity "
+        "factor, target PF and (optional) feeder length.",
+        "1. 在「盤清單」工作表列出每一個盤：盤名、系統、參差因數、目標功率因數，"
+        "幹線長度可選填。"),
+    "xl_ins_2": (
+        "2. List the loads on the Loads sheet, one row per load group; the "
+        "Panel column links each row to its panel.",
+        "2. 在「負載清單」工作表每列輸入一組負載，「盤名」欄指定所屬的盤。"),
+    "xl_ins_3": (
+        "3. Blue text on a yellow fill marks input cells. The filled rows are "
+        "examples - overwrite or delete them.",
+        "3. 黃底藍字為輸入欄位；已填入的列為範例，可直接覆寫或刪除。"),
+    "xl_ins_4": (
+        "4. In the program: Panel load tab → Import Excel / CSV, then "
+        "Calculate all panels, or Export Excel for a results workbook.",
+        "4. 程式中：盤負載頁 → 匯入 Excel / CSV，再按「計算全部盤」，"
+        "或「匯出 Excel」取得計算結果活頁簿。"),
+    "xl_ins_5": (
+        "Blank cells use the defaults below. Rows without a numeric rating "
+        "are skipped and listed in the import notes. Chinese or English "
+        "headers and values are both accepted.",
+        "空白欄位使用下表預設值；沒有數字額定值的列會被略過並列於匯入注意事項。"
+        "中文或英文欄名及內容皆可。"),
+    "xl_ins_sheet": ("Sheet", "工作表"),
+    "xl_ins_col": ("Column", "欄位"),
+    "xl_ins_req": ("Required", "必填"),
+    "xl_ins_vals": ("Allowed values / default", "可用值 / 預設值"),
+    "xl_ins_ex": ("Example", "範例"),
+    "xl_help_panel": ("Unique panel name", "盤名 (不可重複)"),
+    "xl_help_system": (
+        "208Y/120, 480Y/277, 480D, 240/120 1PH or 120 1PH",
+        "208Y/120、480Y/277、480D、240/120 1PH 或 120 1PH"),
+    "xl_help_diversity": (
+        "≥ 1.0; coincident demand = demand ÷ diversity. A value below 1 is "
+        "read as a coincidence factor (diversity = 1 / value). Blank = 1.0",
+        "≥ 1.0；同時需量 = 需量 ÷ 參差因數。小於 1 的值視為同時率 "
+        "(參差因數 = 1 / 值)。空白 = 1.0"),
+    "xl_help_target_pf": ("Target power factor for capacitor sizing; "
+                          "blank = 0.95", "電容器計算用目標功率因數；空白 = 0.95"),
+    "xl_help_feeder_length": (
+        "One-way feeder length in ft for voltage drop (a value like 45m is "
+        "converted); blank = feeder length on the Panel load tab",
+        "電壓降計算用單程幹線長度 (ft，輸入如 45m 會自動換算)；空白 = 盤負載頁設定"),
+    "xl_help_load_panel": (
+        "Panel name from the Panels sheet; blank = same as the row above",
+        "須與「盤清單」的盤名相同；空白 = 同上一列"),
+    "xl_help_circuit": ("Circuit number(s), free text", "迴路編號 (自由輸入)"),
+    "xl_help_name": ("Load description", "負載名稱 / 說明"),
+    "xl_help_category": (
+        "Lighting, Receptacle, Motor, Heating, Cooling / A/C, Equipment, "
+        "Other (blank = Other). Receptacles over 10 kVA get the NEC {rec} "
+        "demand factor; heating and cooling are non-coincident ({nc})",
+        "照明、插座、馬達、電熱、空調、設備、其他 (空白 = 其他)。插座超過 10 kVA "
+        "依 NEC {rec} 取需量因數；電熱與空調視為不同時負載 ({nc})"),
+    "xl_help_qty": ("Number of identical loads; blank = 1",
+                    "相同負載數量；空白 = 1"),
+    "xl_help_rating": ("Rating of ONE unit, in the Unit column",
+                       "單台額定值，單位見「單位」欄"),
+    "xl_help_unit": (
+        "VA, kVA, W, kW, HP or A; blank = VA. HP uses the motor full-load "
+        "current of NEC {flc}",
+        "VA、kVA、W、kW、HP 或 A；空白 = VA。HP 依 NEC {flc} 馬達滿載電流計算"),
+    "xl_help_pf": ("0-1 or %; blank = 1.0 (motors 0.85)",
+                   "0-1 或 %；空白 = 1.0 (馬達 0.85)"),
+    "xl_help_voltage": (
+        "Load voltage; blank = line-to-neutral for 1Ø loads (line-to-line on "
+        "480D), line-to-line for 3Ø loads",
+        "負載電壓；空白 = 單相取相電壓 (480D 取線電壓)，三相取線電壓"),
+    "xl_help_phases": ("1 or 3 (2 = 2-pole, single-phase line-to-line); "
+                       "blank = 1", "1 或 3 (2 = 雙極單相線間負載)；空白 = 1"),
+    "xl_help_continuous": (
+        "Yes / No (load runs 3 h or more); blank = No. The feeder adds 25 % "
+        "of continuous load ({cont})",
+        "是 / 否 (連續 3 小時以上)；空白 = 否。幹線另加連續負載的 25 % ({cont})"),
+    "xl_help_demand_factor": (
+        "0-1 or %; blank = automatic per NEC ({rec}, {nc}), otherwise 1.0",
+        "0-1 或 %；空白 = 依 NEC 自動 ({rec}、{nc})，其餘為 1.0"),
+    "xl_help_phase_conn": (
+        "Auto, A, B, C, AB, BC, CA or ABC (R/S/T accepted); blank = Auto "
+        "(the program balances the phases)",
+        "自動、A、B、C、AB、BC、CA 或 ABC (可用 R/S/T)；空白 = 自動 (程式自動平衡)"),
+    "xl_ins_method": (
+        "Method: demand = connected × DF; coincident = Σ demand ÷ diversity; "
+        "feeder design = coincident + 25 % continuous ({cont}) + 25 % "
+        "largest motor ({mot}).",
+        "計算方式：需量 = 連接負載 × 需量因數；同時需量 = Σ 需量 ÷ 參差因數；"
+        "幹線設計負載 = 同時需量 + 連續負載 25 % ({cont}) + 最大馬達 25 % ({mot})。"),
+    "io_dup_panel": ("{where}: panel {name} is listed twice - first row used",
+                     "{where}：盤 {name} 重複，採用第一列"),
+    "io_bad_system": (
+        "{where}: '{value}' is not a supported system (208Y/120, 480Y/277, "
+        "480D, 240/120 1PH, 120 1PH)",
+        "{where}：不支援的系統「{value}」(可用 208Y/120、480Y/277、480D、"
+        "240/120 1PH、120 1PH)"),
+    "io_coincidence": (
+        "{where}: diversity {value} is below 1 - read as a coincidence "
+        "factor, diversity = {div}",
+        "{where}：參差因數 {value} 小於 1，視為同時率，參差因數 = {div}"),
+    "io_bad_num": ("{where}: {field} '{value}' is not valid - {default} used",
+                   "{where}：{field}「{value}」無效，改用 {default}"),
+    "io_m_to_ft": ("{where}: feeder length {m} m = {ft} ft",
+                   "{where}：幹線長度 {m} m = {ft} ft"),
+    "io_skip_rating": ("{where}: row skipped - rating '{value}' is not a "
+                       "number", "{where}：額定值「{value}」非數字，略過此列"),
+    "io_bad_unit": ("{where}: row skipped - unknown unit '{value}'",
+                    "{where}：未知單位「{value}」，略過此列"),
+    "io_bad_cat": ("{where}: unknown category '{value}' - Other used",
+                   "{where}：未知類別「{value}」，改為「其他」"),
+    "io_bad_phases": ("{where}: phases '{value}' not recognised - {default} "
+                      "used", "{where}：無法辨識相數「{value}」，改用 {default}"),
+    "io_bad_conn": ("{where}: phase connection '{value}' not recognised - "
+                    "Auto used", "{where}：無法辨識接相「{value}」，改為自動"),
+    "io_bad_bool": ("{where}: continuous '{value}' not recognised - No used",
+                    "{where}：無法辨識連續負載「{value}」，改為否"),
+    "io_from_system": ("the panel system voltage", "盤系統電壓"),
+    "io_computed": (
+        "{where}: calculated schedule - kW / kVA / DF / phase columns were "
+        "ignored; demand factors and phase connection set to Auto",
+        "{where}：此為計算結果表，已忽略 kW / kVA / 需量因數 / 接相欄，"
+        "需量因數與接相改為自動"),
+    "io_no_panel_col": ("{where}: no Panel column - all rows assigned to "
+                        "{name}", "{where}：無「盤名」欄，全部負載歸入 {name}"),
+    "io_new_panel": ("Panel {name}: system not given - {system} assumed, "
+                     "please check", "盤 {name}：未指定系統，假設為 {system}，請確認"),
+    "io_3ph_on_1ph": ("{name} ({panel}): 3-phase load on a single-phase "
+                      "panel - set to 1 phase",
+                      "{name} ({panel})：單相盤上的三相負載，已改為單相"),
+    "io_no_loads": ("No load rows were found", "未找到任何負載資料"),
+    "io_calc_error": ("Calculation error: {msg}", "計算錯誤：{msg}"),
+    "io_no_data": (
+        "No panel or load list found - the file needs a header row with at "
+        "least Description and Rating columns (see Excel template)",
+        "找不到盤或負載清單 - 檔案需有標題列，至少包含「負載名稱」與「額定」欄"
+        " (請參考 Excel 範本)"),
+    "err_xls": ("{file}: the old .xls format is not supported - save it as "
+                ".xlsx or CSV", "{file}：不支援舊版 .xls 格式，請另存為 .xlsx 或 CSV"),
+    "err_import": ("Cannot read {file}: {msg}", "無法讀取 {file}：{msg}"),
 
     # ---------------- errors ----------------
     "err_ambient": ("Ambient {ambient} °C not permitted for {temp} °C "

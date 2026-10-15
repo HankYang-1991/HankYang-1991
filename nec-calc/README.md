@@ -27,13 +27,38 @@ Pure Python with **no third-party packages** (Tkinter GUI from the standard libr
 | **Harmonics / Filters 諧波 / 濾波器** | VFD front ends: 6-pulse (none / 3 % / 5 % reactor / DC choke), 12-pulse, 18-pulse, AFE, passive filter. Uses typical spectra (or manufacturer THDi) and arithmetic summation at the PCC. Outputs current TDD and individual limits per Isc/IL, estimated voltage THD, and transformer K-factor. Mitigation options are compared (5 % reactor, passive filter, 18-pulse), and an active harmonic filter is sized to 90 % of the limits (AccuSine PCS+ frames 60/120/200/300 A, typical). 變頻器諧波：TDD、個別諧波、電壓 THD、K 因數、改善方案比較與主動濾波器容量。 | IEEE 519-2022 Tables 1–2, IEEE C57.110 |
 | **MV Cable 24.9 kV 高壓電纜** | Minimum size by voltage, design ampacity, short-circuit withstand (ICEA), conductor protection (fuse ≤ 3×, relay ≤ 6×), EGC, conduit fill and jam ratio. 依電壓最小線徑、安培容量、短路耐受、導線保護、接地線、管填充、卡線比。 | 315.10, 315.60, 240.101(A) → Art. 245 (2026), 250.190(C)(3) |
 | **Cable Tray 電纜架** | Ladder, ventilated-trough and solid-bottom trays with any mix of LV multiconductor, LV single-conductor, control and MV cables. Sizes the tray width; MV and LV in one tray require a barrier. Gives ampacity in tray (covered or spaced) and a **capacity table** (max cables per 6"–36" width). 梯型／通風槽／實底電纜架；低壓多芯、低壓單芯、控制、中壓電纜混合敷設寬度選定；中低壓同架隔板檢查；蓋板／間距安培容量修正；**容量對照表**。 | 392.10, 392.20(B), 392.22(A)(B)(C), Tables 392.22(A)/(B)(1), 392.80, Table 310.17 |
-| **Panel Load Calc 盤負載計算** | Per-load kW/kvar/kVA from PF. Demand factor: automatic receptacle 10 kVA + 50 % and non-coincident heating/cooling, or a manual DF. Diversity factor, automatic phase balancing, imbalance %, capacitor kvar to reach the target PF, and feeder sizing. Exports to CSV. 功率因數、需量因數（自動或自訂）、參差因數、自動平衡相位、不平衡率、功因改善電容、幹線選定、CSV 匯出。 | 220.47, 220.50, 220.60, 430.24, 215.2 |
+| **Panel Load Calc 盤負載計算** | Per-load kW/kvar/kVA from PF. Demand factor: automatic receptacle 10 kVA + 50 % and non-coincident heating/cooling, or a manual DF. Diversity factor, automatic phase balancing, imbalance %, capacitor kvar to reach the target PF, and feeder sizing. **Multiple panels per project, Excel / CSV panel-list import and export, and one-click "Calculate all panels"** (see below). 功率因數、需量因數（自動或自訂）、參差因數、自動平衡相位、不平衡率、功因改善電容、幹線選定；**多盤管理、Excel / CSV 盤負載清單匯入匯出、一鍵計算全部盤**（見下節）。 | 220.47, 220.50, 220.60, 430.24, 215.2 |
 | **Reference 參考資料** | Built-in NEC tables for checking the data. 內建 NEC 表格，可直接檢視核對。 | 310.16, 310.17, 250.122, Ch. 9, 430, 450.3(A), 392.22 |
 
 Other features · 其他：
 - One-click switch between **NEC 2023 and NEC 2026**. The calculation method is the same for ≤ 1000 V. For > 1000 V the code references follow the 2026 move into the new Articles 235 and 245. 一鍵切換 NEC 2023 / 2026。
 - **HTML report** export with inputs, results, numbered calculation steps and NEC references, in the selected language. 匯出 HTML 計算書（含輸入、結果、步驟與條文）。
-- Save and open projects as JSON. 專案存檔／開啟。
+- Save and open projects as JSON (all panels included). 專案存檔／開啟（含全部盤）。
+
+## Excel panel list · Excel 盤負載清單（桌面版）
+
+The Panel Load tab holds any number of panels. The toolbar reads and writes `.xlsx` (Excel 2007+) and CSV with no extra Python packages.
+桌面版「盤負載計算」頁可管理多個盤，工具列可匯入／匯出 Excel (.xlsx) 及 CSV，不需安裝其他套件。
+
+1. **Excel template 範本** – writes a workbook with an *Instructions* sheet, a *Panels* sheet (panel, system, diversity, target PF, feeder length) and a *Loads* sheet (panel, circuit, description, category, qty, rating per unit, unit, PF, voltage, phases, continuous, demand factor, phase connection). Example rows and dropdowns are included. 產生含「說明」、「盤清單」、「負載清單」的範本，附範例列與下拉選單。
+2. Fill in the list in Excel, or paste in your own panel schedule. 在 Excel 填寫或貼上既有盤負載表。
+3. **Import Excel / CSV 匯入** – choose to replace the panels or add / update panels with the same name. All panels are then calculated at once, and the results area shows one line per panel: connected, demand, coincident and design kVA, design current, feeder OCPD, voltage drop and feeder conductors or busway. 可選擇全部取代或新增／更新同名盤，匯入後自動計算全部盤並列出各盤結果。
+4. **Export Excel 匯出** – a results workbook: *Summary* (one row per panel, SUM-formula totals), *Panels* and *Loads* (the same input format, so the file can be edited and imported again), and one calculated schedule sheet per panel with its feeder sizing. 匯出結果活頁簿：彙總（合計使用 SUM 公式）、盤清單／負載清單（可修改後再匯入）、每盤一張計算表含幹線選定。
+
+The importer is forgiving. 匯入容錯：
+- English or Chinese headers and common abbreviations (`Ckt`, `Qty`, `PF`, `V`, `Ph`, `DF`, `迴路`, `台數`, `功因`, `需量因數` …); `Load (VA)` / `kW` style value columns. 中英文欄名及常用縮寫皆可。
+- Categories, units and Yes/No in either language (`照明`, `插座`, `冷氣`, `是/否` …), `85%` or `85` for PF/DF, `1-1/2` HP, `R/S/T` or `L1/L2/L3` phases, `120/208V`-style system names, `45m` feeder lengths. 類別、單位、是否、百分比、分數馬力、R/S/T 相別、公尺長度皆可辨識。
+- A Panel column filled only on the first row of each group, a single-sheet list with a System column, `.csv` files in UTF-8 or Big5 with `,` `;` or tab delimiters, and the per-panel CSV this program exports. 盤名只填第一列、單一工作表含系統欄、UTF-8 / Big5 CSV 皆可。
+- Anything it had to assume (skipped rows, unknown categories, inferred systems, 30 m → 98 ft …) is listed under *Import notes* with the sheet and row number. 所有推定與略過的資料都會列在「匯入注意事項」並標示工作表與列號。
+
+```python
+from necalc import engine as E, panel_io as PIO
+
+panels, notes = PIO.read_panels("panel_list.xlsx")
+results = PIO.calculate_all(panels, "2023", lambda p: E.WiringInput(
+    length_ft=p.feeder_length_ft or 100))
+PIO.write_results("panel_load_calc.xlsx", panels, results, lang="zh")
+```
 
 ## Mobile web version · 手機網頁版
 
@@ -123,6 +148,8 @@ nec-calc/
 │   ├── shortcircuit.py     Available fault current / IC rating (110.9, 110.24)
 │   ├── harmonics.py        VFD harmonics, IEEE 519, filters
 │   ├── loads.py            Panel load calculation (PF, DF, diversity)
+│   ├── panel_io.py         Excel / CSV panel list import & export
+│   ├── xlsx.py             Minimal .xlsx reader / writer (standard library)
 │   ├── i18n.py             English / 中文 text
 │   ├── report.py           Text / HTML / CSV output
 │   └── gui.py              Tkinter GUI

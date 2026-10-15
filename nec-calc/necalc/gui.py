@@ -1,6 +1,7 @@
 """Tkinter desktop GUI (English / 繁體中文) for the NEC design calculator."""
 import json
 import math
+import os
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
@@ -12,6 +13,7 @@ from . import tray as TR
 from . import shortcircuit as SC
 from . import harmonics as HM
 from . import report as R
+from . import panel_io as PIO
 from .codes import EDITIONS
 from .i18n import tr, opt
 
@@ -49,8 +51,9 @@ DEFAULTS = {
     "tr.c.ins": "25kV_133",
     # panel load calc
     "lc.name": "LP-1", "lc.system": "208Y/120", "lc.div": "1.0",
-    "lc.tpf": "0.95",
-    "lc.l.name": "Lighting", "lc.l.cat": "lighting", "lc.l.qty": "1",
+    "lc.tpf": "0.95", "lc.flen": "",
+    "lc.l.name": "Lighting", "lc.l.ckt": "", "lc.l.cat": "lighting",
+    "lc.l.qty": "1",
     "lc.l.rating": "1000", "lc.l.unit": "VA", "lc.l.pf": "0.9",
     "lc.l.v": "120", "lc.l.ph": "1", "lc.l.cont": False, "lc.l.df": "",
     "lc.l.conn": "auto",
@@ -98,21 +101,7 @@ for _p, _d in WIRING_DEFAULTS.items():
         f"{_p}.w.bw_bracing": "auto", f"{_p}.w.bw_runs": "0",
     })
 
-PANEL_EXAMPLE = [
-    L.Load("Office lighting", "lighting", 12, 600, "VA", 0.95, voltage=120,
-           continuous=True),
-    L.Load("General receptacles", "receptacle", 60, 180, "VA", 0.9,
-           voltage=120),
-    L.Load("AHU-1 supply fan", "motor", 1, 10, "HP", 0.85, voltage=208,
-           phases=3),
-    L.Load("EF-1 exhaust fan", "motor", 2, 1, "HP", 0.8, voltage=208,
-           phases=3),
-    L.Load("Unit heater", "heating", 2, 5, "kW", 1.0, voltage=208, phases=1),
-    L.Load("Split A/C", "cooling", 1, 7.5, "kVA", 0.88, voltage=208,
-           phases=3),
-    L.Load("Water heater", "equipment", 1, 4.5, "kW", 1.0, voltage=208,
-           phases=1, continuous=True),
-]
+PANEL_EXAMPLE = L.EXAMPLE_LOADS
 
 SC_EXAMPLE = [
     SC.SCSegment("MSB", "xfmr", kva=2500, z_pct=5.75, xr=8, sec_v=480,
@@ -176,7 +165,11 @@ class App:
         for k, d in DEFAULTS.items():
             self.v[k] = tk.BooleanVar(value=d) if isinstance(d, bool) \
                 else tk.StringVar(value=d)
-        self.panel_loads = [L.Load(**vars(x)) for x in PANEL_EXAMPLE]
+        self.panels = [L.Panel("LP-1", "208Y/120", loads=[
+            L.Load(**vars(x)) for x in PANEL_EXAMPLE])]
+        self.cur_panel = 0
+        self.panel_cb = None
+        self.v["lc.name"].trace_add("write", self._panel_renamed)
         self.tray_cables = [TR.TrayCable(**vars(x)) for x in TRAY_EXAMPLE]
         self.sc_segs = [SC.SCSegment(**vars(x)) for x in SC_EXAMPLE]
         self.harm_drives = [HM.HarmDrive(**vars(x)) for x in HARM_EXAMPLE]
@@ -278,7 +271,7 @@ class App:
         # re-run calculations so code references follow the edition
         for key, fn in (("br", self.calc_branch), ("mo", self.calc_motor),
                         ("xf", self.calc_xfmr), ("mv", self.calc_mv),
-                        ("tr", self.calc_tray), ("lc", self.calc_load),
+                        ("tr", self.calc_tray), ("lc", self._recalc_lc),
                         ("sc", self.calc_sc), ("hm", self.calc_harm)):
             if key in self.results:
                 fn()
@@ -982,23 +975,45 @@ class App:
     # Tab: panel load calculation
     # ------------------------------------------------------------------
     def tab_load(self, f):
+        # toolbar: panel selector and Excel / CSV list import / export
+        bar = ttk.Frame(f)
+        bar.grid(row=0, column=0, columnspan=3, sticky="we", padx=4)
+        ttk.Label(bar, text=self.t("panel_list")).pack(side="left")
+        cb = ttk.Combobox(bar, state="readonly", width=14,
+                          values=[p.name for p in self.panels])
+        cb.current(self.cur_panel)
+        cb.bind("<<ComboboxSelected>>",
+                lambda _e: self.panel_select(cb.current()))
+        cb.pack(side="left", padx=4)
+        self.panel_cb = cb
+        for k, cmd in (("new_panel", self.panel_new),
+                       ("delete_panel", self.panel_delete)):
+            ttk.Button(bar, text=self.t(k), command=cmd).pack(side="left",
+                                                               padx=2)
+        ttk.Button(bar, text=self.t("calc_all_panels"), command=self.calc_all,
+                   style="Accent.TButton").pack(side="right", padx=2)
+        for k, cmd in (("export_csv", self.export_csv),
+                       ("excel_template", self.export_template),
+                       ("export_excel", self.export_excel),
+                       ("import_excel", self.import_excel)):
+            ttk.Button(bar, text=self.t(k), command=cmd).pack(side="right",
+                                                               padx=2)
         top = ttk.Frame(f)
-        top.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        top.grid(row=1, column=0, columnspan=3, sticky="nsew")
         g = self.group(top, "panel_name", 0)
         r = 0
         self._row(g, r, "panel_name", self.entry("lc.name", 14)); r += 1
-        self._row(g, r, "panel_system", self.combo(
+        self._lc_system = self._row(g, r, "panel_system", self.combo(
             "lc.system", list(L.SYSTEMS), labeler=str, width=12)); r += 1
         self._row(g, r, "diversity", self.entry("lc.div", 14)); r += 1
         self._row(g, r, "target_pf", self.entry("lc.tpf", 14)); r += 1
+        self._row(g, r, "feeder_len_panel", self.entry("lc.flen", 14))
+        r += 1
         self.calc_button(g, self.calc_load, r); r += 1
         self.calc_button(g, self.calc_feeder, r, text_key="size_feeder"); r += 1
-        bf = ttk.Frame(g)
-        bf.grid(row=r, column=0, columnspan=2, sticky="we", pady=4)
-        ttk.Button(bf, text=self.t("load_example"),
-                   command=self.load_example).pack(side="left", padx=2)
-        ttk.Button(bf, text=self.t("export_csv"),
-                   command=self.export_csv).pack(side="left", padx=2)
+        ttk.Button(g, text=self.t("load_example"),
+                   command=self.load_example).grid(
+            row=r, column=0, columnspan=2, sticky="we", padx=4, pady=2)
 
         inner = ttk.Notebook(top)
         inner.grid(row=0, column=1, sticky="nsew", padx=4, pady=4)
@@ -1012,6 +1027,7 @@ class App:
         g2 = self.group(pg1, "grp_load", 0)
         r = 0
         self._row(g2, r, "col_name", self.entry("lc.l.name", 20)); r += 1
+        self._row(g2, r, "xl_circuit", self.entry("lc.l.ckt", 20)); r += 1
         self._row(g2, r, "col_cat", self.combo("lc.l.cat", L.CATEGORIES,
                                                width=18)); r += 1
         self._row(g2, r, "col_qty", self.entry("lc.l.qty", 20)); r += 1
@@ -1045,33 +1061,129 @@ class App:
         self.wiring_group(pg2, "lc", 0, show_voltage=False, show_pf=False)
 
         tvf = ttk.Frame(f)
-        tvf.grid(row=1, column=0, columnspan=3, sticky="nsew", padx=4)
-        f.rowconfigure(1, weight=1)
+        tvf.grid(row=2, column=0, columnspan=3, sticky="nsew", padx=4)
+        f.rowconfigure(2, weight=1)
         cols = R.LOAD_COLS
         tv = ttk.Treeview(tvf, columns=cols, show="headings", height=8,
                           selectmode="browse")
-        widths = (150, 80, 40, 60, 45, 45, 45, 35, 45, 55, 60, 60, 55, 75, 55)
+        widths = (55, 150, 80, 40, 60, 45, 45, 45, 35, 45, 55, 60, 60, 55, 75,
+                  55)
         for c, wdt in zip(cols, widths):
             tv.heading(c, text=self.t(c))
-            tv.column(c, width=wdt, anchor="w" if c in ("col_name", "col_cat")
-                      else "e")
+            tv.column(c, width=wdt, anchor="w" if c in (
+                "col_ckt", "col_name", "col_cat") else "e")
         sb = ttk.Scrollbar(tvf, command=tv.yview)
         tv.configure(yscrollcommand=sb.set)
         tv.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         tv.bind("<<TreeviewSelect>>", self._load_select)
         self.load_tv = tv
-        self.results_area(f, "lc", row=2)
+        self.results_area(f, "lc", row=3)
+        self._load_refresh()
+
+    # ---- multiple panels ------------------------------------------
+    @property
+    def panel_loads(self):
+        return self.panels[self.cur_panel].loads
+
+    @panel_loads.setter
+    def panel_loads(self, loads):
+        self.panels[self.cur_panel].loads = loads
+
+    def _vars_to_panel(self, strict=False):
+        """Copy the panel fields of the Load tab into the current panel."""
+        p = self.panels[self.cur_panel]
+        g = lambda k: self.v[k].get()
+        p.name = g("lc.name").strip() or p.name
+        p.system = g("lc.system")
+        p.edition = self.edition
+        flen = g("lc.flen").strip()
+        for attr, val, label in (
+                ("diversity", g("lc.div"), "diversity"),
+                ("target_pf", g("lc.tpf"), "target_pf"),
+                ("feeder_length_ft", flen or "0", "feeder_len_panel")):
+            try:
+                setattr(p, attr, _f(val, self.t(label)))
+            except E.CalcError:
+                if strict:
+                    raise
+        return p
+
+    def _panel_to_vars(self):
+        p = self.panels[self.cur_panel]
+        self.v["lc.name"].set(p.name)
+        self.v["lc.system"].set(p.system)
+        self.v["lc.div"].set(f"{p.diversity:g}")
+        self.v["lc.tpf"].set(f"{p.target_pf:g}")
+        self.v["lc.flen"].set(f"{p.feeder_length_ft:g}"
+                              if p.feeder_length_ft else "")
+        cb = getattr(self, "_lc_system", None)
+        if cb is not None and cb.winfo_exists() and p.system in cb.codes:
+            cb.current(cb.codes.index(p.system))
+
+    def _panel_list_refresh(self):
+        cb = self.panel_cb
+        if cb is not None and cb.winfo_exists():
+            cb.configure(values=[p.name for p in self.panels])
+            cb.current(self.cur_panel)
+
+    def _panel_renamed(self, *_a):
+        if not self.panels:
+            return
+        name = self.v["lc.name"].get().strip()
+        if name:
+            self.panels[self.cur_panel].name = name
+            try:
+                self._panel_list_refresh()
+            except tk.TclError:
+                pass
+
+    def panel_select(self, i):
+        self._vars_to_panel()
+        self.cur_panel = max(0, min(i, len(self.panels) - 1))
+        self._panel_to_vars()
+        self._panel_list_refresh()
+        self._load_refresh()
+
+    def panel_new(self):
+        self._vars_to_panel()
+        names = {p.name.lower() for p in self.panels}
+        n = len(self.panels) + 1
+        while f"PANEL-{n}".lower() in names:
+            n += 1
+        cur = self.panels[self.cur_panel]
+        self.panels.append(L.Panel(f"PANEL-{n}", cur.system,
+                                   edition=self.edition))
+        self.panel_select(len(self.panels) - 1)
+
+    def panel_delete(self, confirm=True):
+        p = self.panels[self.cur_panel]
+        if confirm and not messagebox.askyesno(
+                self.t("delete_panel"),
+                self.t("confirm_delete_panel", name=p.name,
+                       n=len(p.loads))):
+            return
+        del self.panels[self.cur_panel]
+        if not self.panels:
+            self.panels.append(L.Panel("PANEL-1", p.system,
+                                       edition=self.edition))
+        self.cur_panel = min(self.cur_panel, len(self.panels) - 1)
+        self._panel_to_vars()
+        self._panel_list_refresh()
         self._load_refresh()
 
     def _panel(self):
-        return L.Panel(name=self.v["lc.name"].get(),
-                       system=self.v["lc.system"].get(),
-                       diversity=_f(self.v["lc.div"].get(),
-                                    self.t("diversity")),
-                       target_pf=_f(self.v["lc.tpf"].get(),
-                                    self.t("target_pf")),
-                       loads=list(self.panel_loads), edition=self.edition)
+        p = self._vars_to_panel(strict=True)
+        return L.Panel(name=p.name, system=p.system,
+                       diversity=p.diversity, target_pf=p.target_pf,
+                       loads=list(p.loads), edition=self.edition,
+                       feeder_length_ft=p.feeder_length_ft)
+
+    def _feeder_wiring(self, panel):
+        w = self.wiring_input("lc")
+        if panel.feeder_length_ft > 0:
+            w.length_ft = panel.feeder_length_ft
+        return w
 
     def _load_refresh(self):
         tv = self.load_tv
@@ -1084,9 +1196,9 @@ class App:
             if calc:
                 vals = R.load_row_values(calc["rows"][i], self.lang)
             else:
-                vals = [ld.name, opt(ld.category, self.lang), ld.qty,
-                        ld.rating, ld.unit, ld.pf, ld.voltage, ld.phases,
-                        "", "", "", "", "", "", ""]
+                vals = [ld.circuit, ld.name, opt(ld.category, self.lang),
+                        ld.qty, ld.rating, ld.unit, ld.pf, ld.voltage,
+                        ld.phases, "", "", "", "", "", "", ""]
             tv.insert("", "end", iid=str(i), values=vals)
 
     def _load_form(self):
@@ -1099,14 +1211,15 @@ class App:
                       voltage=_f(g("v"), self.t("col_v")),
                       phases=int(g("ph")), continuous=bool(g("cont")),
                       demand_factor=_f(df, self.t("df_auto")) if df else None,
-                      phase_conn=g("conn"))
+                      phase_conn=g("conn"), circuit=g("ckt").strip())
 
     def _load_select(self, _e=None):
         sel = self.load_tv.selection()
         if not sel:
             return
         ld = self.panel_loads[int(sel[0])]
-        for k, v in (("name", ld.name), ("cat", ld.category),
+        for k, v in (("name", ld.name), ("ckt", ld.circuit),
+                     ("cat", ld.category),
                      ("qty", str(ld.qty)), ("rating", f"{ld.rating:g}"),
                      ("unit", ld.unit), ("pf", f"{ld.pf:g}"),
                      ("v", f"{ld.voltage:g}"), ("ph", str(ld.phases)),
@@ -1149,14 +1262,23 @@ class App:
         self.panel_loads = [L.Load(**vars(x)) for x in PANEL_EXAMPLE]
         self._load_refresh()
 
+    def _recalc_lc(self):
+        mode = getattr(self, "_lc_mode", "one")
+        if mode == "all":
+            self.calc_all()
+        else:
+            self.calc_load(feeder=mode == "feeder")
+
     def calc_load(self, feeder=False):
+        self._lc_mode = "feeder" if feeder else "one"
+
         def run():
             panel = self._panel()
             calc = L.calculate(panel)
             feeder_res = None
             if feeder:
-                w = self.wiring_input("lc")
-                feeder_res = L.size_feeder(panel, calc, w)
+                feeder_res = L.size_feeder(panel, calc,
+                                           self._feeder_wiring(panel))
             self._load_refresh()
 
             def draw(txt):
@@ -1190,6 +1312,151 @@ class App:
 
     def calc_feeder(self):
         self.calc_load(feeder=True)
+
+    # ---- all panels / Excel ----------------------------------------
+    def _calc_all_results(self):
+        self._vars_to_panel(strict=True)
+        return PIO.calculate_all(self.panels, self.edition,
+                                 self._feeder_wiring)
+
+    def calc_all(self, notes=None, header=None):
+        """Calculate every panel and show a one-line-per-panel summary.
+        notes: import notes, header: (i18n key, params) shown above it."""
+        self._lc_mode = "all"
+
+        def run():
+            results = self._calc_all_results()
+
+            def draw(txt):
+                note_lines = PIO.issue_lines(notes or [], self.lang)
+                if header:
+                    txt.insert("end", self.t(header[0], **header[1]) + "\n",
+                               "head")
+                if note_lines:
+                    txt.insert("end", f"[{self.t('import_notes')}]\n",
+                               "head")
+                    for n in note_lines:
+                        txt.insert("end", f"  ! {n}\n", "warn")
+                    txt.insert("end", "\n")
+                txt.insert("end", f"{self.t('all_panels_title')} "
+                           f"({len(results)})\n", "head")
+                errors = self._table(txt, *PIO.summary_table(results,
+                                                             self.lang))
+                for e in errors:
+                    txt.insert("end", f"  {e}\n", "ng")
+                for it in results:
+                    if it["calc"]:
+                        for n in R.load_notes(it["calc"], self.lang):
+                            txt.insert("end", f"  • {it['panel'].name}: "
+                                       f"{n}\n")
+
+            draw.html = lambda: PIO.summary_html(results, self.lang)
+            draw.csv = lambda: PIO.summary_csv(results, self.lang)
+            self.results["lc"] = ("tab_load", draw)
+            self.render("lc")
+        self._run("lc", run)
+
+    def _table(self, txt, head, rows, total, errors):
+        """Insert a table aligned with pixel tab stops (CJK-safe)."""
+        font = tkfont.Font(root=self.root, font=txt.cget("font"))
+        pad = font.measure("   ")
+        table = [head] + rows + [total]
+        widths = [max(font.measure(str(r[i])) for r in table)
+                  for i in range(len(head))]
+        stops, x = [], widths[0] + pad
+        last = len(head) - 1
+        for i in range(1, len(head)):
+            if i in (1, last):                  # text: left aligned
+                stops += [x, "left"]
+                x += widths[i] + pad
+            else:                               # numbers: right aligned
+                x += widths[i]
+                stops += [x, "right"]
+                x += pad
+        txt.tag_configure("tbl", tabs=stops)
+        txt.tag_configure("tblh", foreground="#0b4f9c")
+        rule = "-" * max(int((x - pad) / max(font.measure("-"), 1)), 10)
+        for j, r in enumerate(table):
+            tags = ("tbl", "tblh") if j in (0, len(table) - 1) else ("tbl",)
+            txt.insert("end", "\t".join(str(v) for v in r) + "\n", tags)
+            if j in (0, len(table) - 2):
+                txt.insert("end", rule + "\n", "tblh")
+        return errors
+
+    def import_excel(self, path=None, replace=None):
+        """Import panels / loads from .xlsx or .csv.  replace: True =
+        replace all panels, False = add / update by name, None = ask."""
+        if path is None:
+            path = filedialog.askopenfilename(filetypes=[
+                ("Excel / CSV", "*.xlsx *.xlsm *.csv"),
+                ("Excel", "*.xlsx *.xlsm"), ("CSV", "*.csv"),
+                ("*", "*.*")])
+        if not path:
+            return
+        try:
+            panels, notes = PIO.read_panels(path, self.edition)
+        except E.CalcError as e:
+            messagebox.showerror(self.t("error"),
+                                 tr(e.key, self.lang, **e.params))
+            return
+        if not panels:
+            messagebox.showerror(self.t("error"), self.t("io_no_data"))
+            return
+        self._vars_to_panel()
+        if replace is None:
+            ans = messagebox.askyesnocancel(
+                self.t("import_excel"),
+                self.t("import_replace_q", n=len(panels)))
+            if ans is None:
+                return
+            replace = ans
+        if replace:
+            self.panels = panels
+        else:
+            for p in panels:
+                k = p.name.strip().lower()
+                idx = next((i for i, q in enumerate(self.panels)
+                            if q.name.strip().lower() == k), None)
+                if idx is None:
+                    self.panels.append(p)
+                else:
+                    self.panels[idx] = p
+        self.cur_panel = self.panels.index(panels[0])
+        self._panel_to_vars()
+        self._panel_list_refresh()
+        self._load_refresh()
+        header = ("imported_n", dict(
+            panels=len(panels), loads=sum(len(p.loads) for p in panels),
+            file=os.path.basename(path)))
+        self.calc_all(notes=notes, header=header)
+
+    def export_excel(self, path=None):
+        try:
+            results = self._calc_all_results()
+        except E.CalcError as e:
+            self._show_error("lc", tr(e.key, self.lang, **e.params))
+            return
+        if path is None:
+            path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],
+                initialfile="panel_load_calc.xlsx")
+        if not path:
+            return
+        PIO.write_results(path, [it["panel"] for it in results], results,
+                          self.lang, self.edition)
+        messagebox.showinfo(self.t("export_excel"),
+                            f"{self.t('saved_to')}: {path}")
+
+    def export_template(self, path=None):
+        if path is None:
+            path = filedialog.asksaveasfilename(
+                defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")],
+                initialfile="panel_list_template.xlsx")
+        if not path:
+            return
+        PIO.write_template(path, self.lang, self.edition)
+        messagebox.showinfo(self.t("excel_template"),
+                            f"{self.t('saved_to')}: {path}")
 
     # ------------------------------------------------------------------
     # generic list editor (short-circuit path, harmonic drives)
@@ -1496,8 +1763,11 @@ class App:
                             f"{self.t('saved_to')}: {path}")
 
     def project_dict(self):
-        return {"format": "necalc-project", "version": 1,
+        self._vars_to_panel()
+        return {"format": "necalc-project", "version": 2,
                 "vars": {k: v.get() for k, v in self.v.items()},
+                "panels": [p.to_dict() for p in self.panels],
+                "cur_panel": self.cur_panel,
                 "panel_loads": [vars(x) for x in self.panel_loads],
                 "tray_cables": [vars(x) for x in self.tray_cables],
                 "sc_segments": [vars(x) for x in self.sc_segs],
@@ -1507,7 +1777,17 @@ class App:
         for k, val in d.get("vars", {}).items():
             if k in self.v:
                 self.v[k].set(val)
-        self.panel_loads = [L.Load(**x) for x in d.get("panel_loads", [])]
+        if d.get("panels"):
+            self.panels = [L.Panel.from_dict(x) for x in d["panels"]]
+            self.cur_panel = min(int(d.get("cur_panel", 0)),
+                                 len(self.panels) - 1)
+            self._panel_to_vars()
+        else:               # version 1: one panel described by the vars
+            self.panels = [L.Panel(
+                "PANEL", loads=[L.Load(**x)
+                                for x in d.get("panel_loads", [])])]
+            self.cur_panel = 0
+            self._vars_to_panel()
         self.tray_cables = [TR.TrayCable(**x)
                             for x in d.get("tray_cables", [])]
         if "sc_segments" in d:
