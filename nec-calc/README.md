@@ -89,6 +89,15 @@ python examples/system_24900_to_120.py zh 2026   # 24.9 kV → 120 V example in 
 python -m unittest discover -s tests             # run tests 執行測試
 ```
 
+### Desktop package · 電腦版安裝包
+
+```bash
+python tools/build_desktop.py      # → dist/NEC-Calculator-<version>.zip
+```
+
+The zip holds `NEC-Calculator.pyzw` (the whole program in one file; on Windows double-click it once Python 3.9+ is installed), launchers for Windows / macOS / Linux, the Excel templates, an offline copy of the mobile web version and the source code.
+壓縮檔內含單一檔案主程式 `NEC-Calculator.pyzw`（Windows 安裝 Python 3.9 以上後直接點兩下即可執行）、Windows / macOS / Linux 啟動檔、Excel 範本、可離線使用的網頁版及原始碼。
+
 ### Use as a Python library · 當作 Python 函式庫使用
 
 ```python
@@ -154,6 +163,7 @@ nec-calc/
 │   ├── report.py           Text / HTML / CSV output
 │   └── gui.py              Tkinter GUI
 ├── web/                    Mobile web version (JS port + cross-check vs Python)
+├── tools/build_desktop.py  Builds the desktop zip package
 ├── examples/system_24900_to_120.py
 └── tests/
 ```

@@ -5,4 +5,4 @@ equipment circuits: OCPD / disconnect, conductor, EGC, conduit and cable
 tray selection, voltage drop, motor and transformer protection, and panel
 load calculation with power, demand and diversity factors.
 """
-__version__ = "1.0.0"
+__version__ = "1.1.0"
