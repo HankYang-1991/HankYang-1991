@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>暗房修圖</title>
+<meta name="description" content="手機與電腦通用的圖層式修圖工具：筆刷、裁切、調色、濾鏡、文字、圖層混合模式。">
+<meta name="theme-color" content="#1b1d21">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<!--APP-->
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><span class="mark" aria-hidden="true"></span><b>暗房</b><span class="sub">Darkroom</span></div>
+    <div class="actions">
+      <button class="btn" id="btnOpen" title="開啟影像 (Ctrl+O)">開啟</button>
+      <button class="btn hide-sm" id="btnNew" title="新增畫布">新增</button>
+      <span class="sep hide-sm"></span>
+      <button class="ibtn" id="btnUndo" title="復原 (Ctrl+Z)" aria-label="復原"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+      <button class="ibtn" id="btnRedo" title="重做 (Ctrl+Shift+Z)" aria-label="重做"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+      <button class="ibtn" id="btnFit" title="符合視窗 (Ctrl+0)" aria-label="符合視窗"><svg viewBox="0 0 24 24"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg></button>
+      <button class="btn primary" id="btnExport" title="匯出 (Ctrl+S)">匯出</button>
+      <button class="ibtn show-sm" id="btnPanel" aria-label="開啟面板" title="面板"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
+    </div>
+    <input type="file" id="fileOpen" accept="image/*" hidden>
+    <input type="file" id="fileLayer" accept="image/*" hidden>
+  </header>
+
+  <div class="optbar" id="optbar">
+    <span class="opt tool-name" id="toolName">筆刷</span>
+    <label class="opt" data-for="brush shape fill text"><span>顏色</span><input type="color" id="optColor" value="#f0a742"></label>
+    <div class="opt swatches" data-for="brush shape fill text" id="swatches"></div>
+    <label class="opt" data-for="brush eraser shape"><span>大小</span><input type="range" id="optSize" min="1" max="400" value="24"><output id="outSize">24</output></label>
+    <label class="opt" data-for="brush eraser shape fill"><span>不透明</span><input type="range" id="optOpacity" min="1" max="100" value="100"><output id="outOpacity">100%</output></label>
+    <label class="opt" data-for="brush eraser"><span>硬度</span><input type="range" id="optHardness" min="0" max="100" value="80"><output id="outHardness">80%</output></label>
+    <label class="opt" data-for="shape"><span>形狀</span><select id="optShape"><option value="rect">矩形</option><option value="ellipse">橢圓</option><option value="line">直線</option></select></label>
+    <label class="opt" data-for="shape"><input type="checkbox" id="optShapeFill"><span>填滿</span></label>
+    <label class="opt" data-for="fill"><span>容許度</span><input type="range" id="optTolerance" min="0" max="100" value="32"><output id="outTolerance">32</output></label>
+    <label class="opt" data-for="crop"><span>比例</span><select id="optRatio"><option value="free">自由</option><option value="1">1:1</option><option value="1.3333">4:3</option><option value="0.75">3:4</option><option value="1.7778">16:9</option><option value="0.5625">9:16</option><option value="1.5">3:2</option></select></label>
+    <div class="opt" data-for="crop"><button class="btn primary sm" id="btnCropApply">套用裁切</button><button class="btn sm" id="btnCropCancel">取消</button></div>
+    <span class="opt hint" data-for="move">拖曳以移動目前圖層</span>
+    <span class="opt hint" data-for="hand">拖曳平移畫面，雙指縮放</span>
+    <span class="opt hint" data-for="eyedropper">點選畫面取色</span>
+    <span class="opt hint" data-for="text">點選畫面放置文字</span>
+  </div>
+
+  <main class="workspace">
+    <nav class="toolbar" id="toolbar" aria-label="工具">
+      <button data-tool="move" title="移動 (V)"><svg viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M9 6l3-3 3 3M9 18l3 3 3-3M6 9l-3 3 3 3M18 9l3 3-3 3"/></svg><i>移動</i></button>
+      <button data-tool="hand" title="手形 (H / 空白鍵)"><svg viewBox="0 0 24 24"><path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 11V4.5a1.5 1.5 0 0 1 3 0V12M14 11.5V6a1.5 1.5 0 0 1 3 0v8a7 7 0 0 1-7 7h-.5a6 6 0 0 1-4.8-2.4L3.5 15a1.5 1.5 0 0 1 2.3-1.9L8 15"/></svg><i>平移</i></button>
+      <button data-tool="crop" title="裁切 (C)"><svg viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 0 0 2 2h14M18 22V8a2 2 0 0 0-2-2H2"/></svg><i>裁切</i></button>
+      <button data-tool="brush" title="筆刷 (B)"><svg viewBox="0 0 24 24"><path d="M18.5 3.5a2.1 2.1 0 0 1 3 3L11 17l-4-4z"/><path d="M7 13c-2 0-3.5 1.5-3.5 3.5 0 1.5-1 2.5-1.5 3 3 .5 7-1 7.5-4.5"/></svg><i>筆刷</i></button>
+      <button data-tool="eraser" title="橡皮擦 (E)"><svg viewBox="0 0 24 24"><path d="M7 21h10M5.5 15.5 14 7a2 2 0 0 1 2.8 0l2.2 2.2a2 2 0 0 1 0 2.8L12 19H8.5z"/><path d="m9.5 11.5 5 5"/></svg><i>橡皮擦</i></button>
+      <button data-tool="shape" title="形狀 (U)"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="10" height="10" rx="1"/><circle cx="15.5" cy="15.5" r="5.5"/></svg><i>形狀</i></button>
+      <button data-tool="fill" title="油漆桶 (G)"><svg viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2a2 2 0 0 0 2.8 0z"/><path d="M2.5 12.5h15"/><path d="M22 20a2 2 0 1 1-4 0c0-1.6 2-4 2-4s2 2.4 2 4z"/></svg><i>油漆桶</i></button>
+      <button data-tool="text" title="文字 (T)"><svg viewBox="0 0 24 24"><path d="M4 7V4h16v3M9 20h6M12 4v16"/></svg><i>文字</i></button>
+      <button data-tool="eyedropper" title="滴管 (I)"><svg viewBox="0 0 24 24"><path d="m3 21 2-.5L15 10.5 13.5 9 3.5 19z"/><path d="m13 7 4-4a2.1 2.1 0 0 1 3 3l-4 4 1 1-1.5 1.5-5-5L12 6z"/></svg><i>滴管</i></button>
+    </nav>
+
+    <section class="stage" id="stage">
+      <canvas id="view"></canvas>
+      <div class="hud" id="hud"></div>
+      <div class="drop" id="drop" hidden>放開以開啟影像</div>
+    </section>
+
+    <aside class="panel" id="panel">
+      <div class="sheet-grip show-sm" id="sheetGrip"><span></span></div>
+      <div class="tabs" role="tablist">
+        <button role="tab" data-tab="layers" class="on">圖層</button>
+        <button role="tab" data-tab="adjust">調整</button>
+        <button role="tab" data-tab="filters">濾鏡</button>
+        <button role="tab" data-tab="image">影像</button>
+      </div>
+
+      <div class="tab-body" data-body="layers">
+        <div class="layer-props">
+          <label class="row"><span>混合模式</span><select id="layerBlend"></select></label>
+          <label class="row"><span>不透明度</span><input type="range" id="layerOpacity" min="0" max="100" value="100"><output id="outLayerOpacity">100%</output></label>
+        </div>
+        <ul class="layers" id="layerList"></ul>
+        <div class="layer-actions">
+          <button class="ibtn" id="lyAdd" title="新增圖層" aria-label="新增圖層"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="ibtn" id="lyDup" title="複製圖層" aria-label="複製圖層"><svg viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg></button>
+          <button class="ibtn" id="lyUp" title="上移" aria-label="上移"><svg viewBox="0 0 24 24"><path d="m6 15 6-6 6 6"/></svg></button>
+          <button class="ibtn" id="lyDown" title="下移" aria-label="下移"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
+          <button class="ibtn" id="lyMerge" title="向下合併" aria-label="向下合併"><svg viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg></button>
+          <button class="ibtn danger" id="lyDel" title="刪除圖層" aria-label="刪除圖層"><svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+        </div>
+      </div>
+
+      <div class="tab-body" data-body="adjust" hidden>
+        <p class="note">即時預覽套用在目前圖層：<b id="adjLayerName"></b></p>
+        <div id="adjList" class="adj-list"></div>
+        <div class="btn-row">
+          <button class="btn" id="adjReset">重設</button>
+          <button class="btn primary" id="adjApply">套用</button>
+        </div>
+      </div>
+
+      <div class="tab-body" data-body="filters" hidden>
+        <p class="note">點一下套用到目前圖層，可用復原撤銷。</p>
+        <div class="filter-grid" id="filterGrid"></div>
+      </div>
+
+      <div class="tab-body" data-body="image" hidden>
+        <div class="group">
+          <h3>變形</h3>
+          <div class="grid2">
+            <button class="btn" data-img="rotL">向左旋轉 90°</button>
+            <button class="btn" data-img="rotR">向右旋轉 90°</button>
+            <button class="btn" data-img="flipH">水平翻轉</button>
+            <button class="btn" data-img="flipV">垂直翻轉</button>
+          </div>
+        </div>
+        <div class="group">
+          <h3>尺寸</h3>
+          <div class="grid2">
+            <button class="btn" data-img="resize">影像尺寸…</button>
+            <button class="btn" data-img="new">新增畫布…</button>
+          </div>
+        </div>
+        <div class="group">
+          <h3>圖層</h3>
+          <div class="grid2">
+            <button class="btn" data-img="placeLayer">置入影像為圖層</button>
+            <button class="btn" data-img="flatten">影像平面化</button>
+            <button class="btn" data-img="clearLayer">清除圖層內容</button>
+            <button class="btn" data-img="fillLayer">以前景色填滿</button>
+          </div>
+        </div>
+        <div class="group">
+          <h3>資訊</h3>
+          <dl class="info" id="docInfo"></dl>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="modal" id="dlgText" hidden role="dialog" aria-labelledby="dlgTextTitle">
+    <h2 id="dlgTextTitle">加入文字</h2>
+    <textarea id="txtValue" rows="3">暗房 Darkroom</textarea>
+    <div class="grid2">
+      <label class="row"><span>字級 px</span><input type="number" id="txtSize" min="6" max="1000" value="72"></label>
+      <label class="row"><span>字重</span><select id="txtWeight"><option value="400">一般</option><option value="700" selected>粗體</option></select></label>
+      <label class="row"><span>對齊</span><select id="txtAlign"><option value="left">靠左</option><option value="center">置中</option><option value="right">靠右</option></select></label>
+      <label class="row"><span>陰影</span><input type="checkbox" id="txtShadow"></label>
+    </div>
+    <div class="btn-row"><button class="btn" data-close>取消</button><button class="btn primary" id="txtApply">加入</button></div>
+  </div>
+
+  <div class="modal" id="dlgNew" hidden role="dialog" aria-labelledby="dlgNewTitle">
+    <h2 id="dlgNewTitle">新增畫布</h2>
+    <div class="presets" id="newPresets"></div>
+    <div class="grid2">
+      <label class="row"><span>寬度 px</span><input type="number" id="newW" min="1" max="8192" value="1920"></label>
+      <label class="row"><span>高度 px</span><input type="number" id="newH" min="1" max="8192" value="1080"></label>
+    </div>
+    <label class="row"><span>背景</span><select id="newBg"><option value="#ffffff">白色</option><option value="#000000">黑色</option><option value="transparent">透明</option></select></label>
+    <div class="btn-row"><button class="btn" data-close>取消</button><button class="btn primary" id="newApply">建立</button></div>
+  </div>
+
+  <div class="modal" id="dlgResize" hidden role="dialog" aria-labelledby="dlgResizeTitle">
+    <h2 id="dlgResizeTitle">影像尺寸</h2>
+    <div class="grid2">
+      <label class="row"><span>寬度 px</span><input type="number" id="rsW" min="1" max="8192"></label>
+      <label class="row"><span>高度 px</span><input type="number" id="rsH" min="1" max="8192"></label>
+    </div>
+    <label class="row"><input type="checkbox" id="rsLock" checked><span>維持長寬比</span></label>
+    <div class="btn-row"><button class="btn" data-close>取消</button><button class="btn primary" id="rsApply">套用</button></div>
+  </div>
+
+  <div class="modal wide" id="dlgExport" hidden role="dialog" aria-labelledby="dlgExportTitle">
+    <h2 id="dlgExportTitle">匯出影像</h2>
+    <div class="export-grid">
+      <div class="export-preview"><img id="expPreview" alt="匯出預覽"></div>
+      <div class="export-form">
+        <label class="row"><span>檔名</span><input type="text" id="expName" value="darkroom"></label>
+        <label class="row"><span>格式</span><select id="expFmt"><option value="png">PNG（無損、保留透明）</option><option value="jpg" selected>JPEG（照片、檔案小）</option><option value="webp">WebP</option></select></label>
+        <label class="row" id="expQualityRow"><span>品質</span><input type="range" id="expQuality" min="10" max="100" value="92"><output id="outExpQuality">92</output></label>
+        <label class="row"><span>縮放</span><select id="expScale"><option value="1">100%</option><option value="0.5">50%</option><option value="0.25">25%</option><option value="2">200%</option></select></label>
+        <p class="note" id="expInfo"></p>
+        <p class="note small">若儲存按鈕無法使用，可長按（或右鍵）左側預覽圖另存。</p>
+      </div>
+    </div>
+    <div class="btn-row"><button class="btn" data-close>關閉</button><button class="btn primary" id="expSave">儲存</button></div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+<!--/APP-->
+<script src="app.js"></script>
+</body>
+</html>
