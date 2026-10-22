@@ -1034,20 +1034,24 @@ async function saveExport() {
   if (!blob) { toast('匯出失敗，請改用較小的縮放'); return; }
   const fmt = $('#expFmt').value;
   const name = ($('#expName').value.trim() || 'darkroom').replace(/[\\/:*?"<>|]/g, '_') + '.' + fmt;
+  await saveBlob(blob, name);
+}
+// Hand a finished file to the viewer: artifact download prompt, phone share sheet, or a normal download.
+async function saveBlob(blob, name) {
   if (downloadsApi) {
-    try { await downloadsApi.save({ filename: name, data: blob }); toast('已儲存 ' + name); }
-    catch (err) { if (err && err.code !== 'declined') toast('無法儲存：可長按預覽圖另存'); }
-    return;
+    try { await downloadsApi.save({ filename: name, data: blob }); toast('已儲存 ' + name); return true; }
+    catch (err) { if (err && err.code !== 'declined') toast('無法儲存這個檔案'); return false; }
   }
   const file = new File([blob], name, { type: blob.type });
   if (isTouch && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return; } catch (err) { if (err && err.name === 'AbortError') return; }
+    try { await navigator.share({ files: [file], title: name }); return true; } catch (err) { if (err && err.name === 'AbortError') return false; }
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 4000);
   toast('已下載 ' + name);
+  return true;
 }
 
 /* ================= modals, tabs, toast ================= */
@@ -1063,6 +1067,7 @@ function setTab(t) {
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('.tab-body').forEach(b => { b.hidden = b.dataset.body !== t; });
   if (t === 'filters') requestAnimationFrame(buildFilterThumbs);
+  document.dispatchEvent(new CustomEvent('darkroom:tab', { detail: t }));
 }
 $$('.tabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
 function togglePanel(force) {
@@ -1166,6 +1171,7 @@ window.addEventListener('paste', e => {
 // keyboard
 const KEYS = { v: 'move', h: 'hand', c: 'crop', b: 'brush', e: 'eraser', u: 'shape', g: 'fill', t: 'text', i: 'eyedropper' };
 window.addEventListener('keydown', e => {
+  if (document.body.dataset.mode === 'video') return;
   if (e.target.matches('input, textarea, select')) {
     if (openDlg && e.key === 'Escape') closeModal();
     if (openDlg === $('#dlgText') && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) applyText();
@@ -1196,6 +1202,22 @@ window.addEventListener('keyup', e => { if (e.key === ' ') { spaceDown = false; 
 
 new ResizeObserver(() => render()).observe(stage);
 window.addEventListener('beforeunload', e => { if (H.idx > 0) { e.preventDefault(); e.returnValue = ''; } });
+
+/* ================= shared API for ai.js / video.js ================= */
+function loadCanvasAsDocument(canvas, name) {
+  commitAdjustIfAny();
+  S.w = canvas.width; S.h = canvas.height;
+  const l = newLayer(name, S.w, S.h); l.ctx.drawImage(canvas, 0, 0);
+  S.layers = [l]; S.active = 0; S.crop = null;
+  H.stack = []; H.idx = -1;
+  fitView(); commit('開啟');
+}
+window.Darkroom = {
+  S, $, $$, clamp, isTouch, makeCanvas, copyCanvas, newLayer, touch, activeLayer, commit, render, fitView,
+  toast, openModal, closeModal, commitAdjustIfAny, gaussBlur, hexToRgb, saveBlob, loadCanvasAsDocument, setTab,
+  flatten() { const c = makeCanvas(S.w, S.h); composite(c, c.getContext('2d'), false); return c; },
+  get downloadsReady() { return !!downloadsApi; },
+};
 
 /* ================= boot ================= */
 buildAdjustUI();

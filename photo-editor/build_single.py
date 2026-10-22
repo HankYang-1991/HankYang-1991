@@ -11,7 +11,8 @@ import sys
 here = pathlib.Path(__file__).parent
 html = (here / "index.html").read_text(encoding="utf-8")
 css = (here / "style.css").read_text(encoding="utf-8")
-js = (here / "app.js").read_text(encoding="utf-8")
+scripts = re.findall(r'<script src="(?!https?:)([^"]+)"></script>', html)
+js = "\n".join((here / src).read_text(encoding="utf-8") for src in scripts)
 
 body = html.split("<!--APP-->", 1)[1].split("<!--/APP-->", 1)[0]
 title = re.search(r"<title>(.*?)</title>", html).group(1)

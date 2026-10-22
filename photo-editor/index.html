@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>暗房修圖</title>
-<meta name="description" content="手機與電腦通用的圖層式修圖工具：筆刷、裁切、調色、濾鏡、文字、圖層混合模式。">
+<meta name="description" content="手機與電腦通用的修圖與影片剪輯工具：圖層、調色、濾鏡、AI 去背、照片影片剪輯匯出。">
 <meta name="theme-color" content="#1b1d21">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -18,13 +18,17 @@
 <div id="app">
   <header class="topbar">
     <div class="brand"><span class="mark" aria-hidden="true"></span><b>暗房</b><span class="sub">Darkroom</span></div>
-    <div class="actions">
+    <div class="seg" id="modeSeg" role="tablist" aria-label="模式">
+      <button role="tab" data-mode="photo" class="on">修圖</button>
+      <button role="tab" data-mode="video">剪輯</button>
+    </div>
+    <div class="actions photo-only">
       <button class="btn" id="btnOpen" title="開啟影像 (Ctrl+O)">開啟</button>
       <button class="btn hide-sm" id="btnNew" title="新增畫布">新增</button>
       <span class="sep hide-sm"></span>
       <button class="ibtn" id="btnUndo" title="復原 (Ctrl+Z)" aria-label="復原"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
       <button class="ibtn" id="btnRedo" title="重做 (Ctrl+Shift+Z)" aria-label="重做"><svg viewBox="0 0 24 24"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
-      <button class="ibtn" id="btnFit" title="符合視窗 (Ctrl+0)" aria-label="符合視窗"><svg viewBox="0 0 24 24"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg></button>
+      <button class="ibtn hide-sm" id="btnFit" title="符合視窗 (Ctrl+0)" aria-label="符合視窗"><svg viewBox="0 0 24 24"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg></button>
       <button class="btn primary" id="btnExport" title="匯出 (Ctrl+S)">匯出</button>
       <button class="ibtn show-sm" id="btnPanel" aria-label="開啟面板" title="面板"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></button>
     </div>
@@ -75,6 +79,7 @@
         <button role="tab" data-tab="layers" class="on">圖層</button>
         <button role="tab" data-tab="adjust">調整</button>
         <button role="tab" data-tab="filters">濾鏡</button>
+        <button role="tab" data-tab="ai">AI 去背</button>
         <button role="tab" data-tab="image">影像</button>
       </div>
 
@@ -106,6 +111,33 @@
       <div class="tab-body" data-body="filters" hidden>
         <p class="note">點一下套用到目前圖層，可用復原撤銷。</p>
         <div class="filter-grid" id="filterGrid"></div>
+      </div>
+
+      <div class="tab-body" data-body="ai" hidden>
+        <section class="card">
+          <h3>AI 去背</h3>
+          <p class="note">在你的裝置上辨識主體，照片不會上傳。第一次使用會下載約 15 MB 的 AI 模型，之後就不用再下載。</p>
+          <p class="note">處理圖層：<b id="aiLayerName"></b></p>
+          <label class="row"><span>新背景</span><select id="aiBg">
+            <option value="transparent">透明</option>
+            <option value="color">前景色</option>
+            <option value="blur">模糊原背景（人像模式）</option>
+            <option value="mono">黑白背景（色彩焦點）</option>
+          </select></label>
+          <label class="row"><span>邊緣貼合</span><input type="range" id="aiRefine" min="0" max="100" value="60"><output id="outAiRefine">60</output></label>
+          <label class="row"><span>邊緣硬度</span><input type="range" id="aiHard" min="0" max="100" value="35"><output id="outAiHard">35</output></label>
+          <label class="row"><span>羽化 px</span><input type="range" id="aiFeather" min="0" max="20" value="1"><output id="outAiFeather">1</output></label>
+          <button class="btn primary" id="aiRun">AI 去背</button>
+          <div class="progress" id="aiProgress" hidden><div class="bar"><i id="aiBar"></i></div><span id="aiStatus"></span></div>
+          <div class="mask-view" id="aiMaskWrap" hidden><canvas id="aiMask" width="160" height="160"></canvas><span class="note small">辨識遮罩（白色＝保留）。調整上方滑桿後按「重新套用」，不必重新辨識。</span></div>
+        </section>
+        <section class="card">
+          <h3>純色背景去除</h3>
+          <p class="note">適合商品照、證件照、白底截圖等單一顏色背景。不需下載模型。</p>
+          <label class="row"><span>容許度</span><input type="range" id="keyTol" min="1" max="100" value="22"><output id="outKeyTol">22</output></label>
+          <label class="row"><input type="checkbox" id="keyAll"><span>移除所有相同顏色（含被包圍的區域）</span></label>
+          <button class="btn" id="keyRun">去除背景色</button>
+        </section>
       </div>
 
       <div class="tab-body" data-body="image" hidden>
@@ -141,6 +173,41 @@
       </div>
     </aside>
   </main>
+
+  <section class="video-view" id="videoView" hidden>
+    <div class="vtop">
+      <button class="btn primary" id="vAdd">加入照片／影片</button>
+      <button class="btn" id="vFromPhoto" title="把修圖模式中目前的影像加入時間軸">加入修圖中的影像</button>
+      <label class="opt"><span>比例</span><select id="vAspect"><option value="16:9">16:9 橫式</option><option value="9:16">9:16 直式</option><option value="1:1">1:1 方形</option><option value="4:5">4:5 貼文</option></select></label>
+      <label class="opt"><span>畫質</span><select id="vRes"><option value="720">720p</option><option value="1080">1080p</option></select></label>
+      <button class="btn" id="vMusic">背景音樂</button>
+      <button class="btn primary" id="vExport">匯出影片</button>
+      <input type="file" id="vFile" accept="image/*,video/*" multiple hidden>
+      <input type="file" id="vMusicFile" accept="audio/*" hidden>
+    </div>
+    <div class="vmain">
+      <div class="vplayer">
+        <div class="vcanvas-wrap" id="vWrap">
+          <canvas id="vCanvas" width="1280" height="720"></canvas>
+          <div class="vempty" id="vEmpty" hidden>
+            <b>還沒有素材</b>
+            <span>加入照片或影片，排在時間軸上，再匯出成影片。</span>
+            <button class="btn" id="vSample">用範例照片試試</button>
+          </div>
+        </div>
+        <div class="vcontrols">
+          <button class="ibtn" id="vPlay" aria-label="播放" title="播放／暫停 (空白鍵)"><svg viewBox="0 0 24 24" id="vPlayIcon"><path d="M7 4v16l13-8z"/></svg></button>
+          <span class="vtime" id="vTime">0:00.0 / 0:00.0</span>
+          <input type="range" id="vSeek" min="0" max="1000" value="0" aria-label="播放位置">
+          <button class="ibtn" id="vGrab" aria-label="擷取畫面" title="擷取目前畫面到修圖"><svg viewBox="0 0 24 24"><path d="M4 8a2 2 0 0 1 2-2h2l1.5-2h5L16 6h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><circle cx="12" cy="12.5" r="3.5"/></svg></button>
+        </div>
+      </div>
+      <aside class="vprops" id="vProps"></aside>
+    </div>
+    <div class="vtimeline-wrap" id="vTlWrap">
+      <div class="vtimeline" id="vTimeline"></div>
+    </div>
+  </section>
 
   <div class="scrim" id="scrim" hidden></div>
 
@@ -193,9 +260,18 @@
     <div class="btn-row"><button class="btn" data-close>關閉</button><button class="btn primary" id="expSave">儲存</button></div>
   </div>
 
+  <div class="modal" id="dlgRender" hidden role="dialog" aria-labelledby="dlgRenderTitle">
+    <h2 id="dlgRenderTitle">匯出影片中…</h2>
+    <p class="note">影片以實際播放速度錄製，請保持這個畫面開啟。</p>
+    <div class="progress"><div class="bar"><i id="vRenderBar"></i></div><span id="vRenderStatus">0%</span></div>
+    <div class="btn-row"><button class="btn" id="vRenderCancel">取消</button></div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 </div>
 <!--/APP-->
 <script src="app.js"></script>
+<script src="ai.js"></script>
+<script src="video.js"></script>
 </body>
 </html>

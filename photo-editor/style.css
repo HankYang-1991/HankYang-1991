@@ -151,9 +151,9 @@ textarea { height: auto; padding: 8px; resize: vertical; width: 100%; }
   display: flex; flex-direction: column; min-height: 0;
   background: var(--ink-1); border-left: 1px solid var(--line);
 }
-.tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }
+.tabs { display: grid; grid-template-columns: repeat(5, auto); border-bottom: 1px solid var(--line); }
 .tabs button {
-  height: 40px; background: none; border: 0; border-bottom: 2px solid transparent;
+  height: 40px; padding: 0 4px; white-space: nowrap; background: none; border: 0; border-bottom: 2px solid transparent;
   color: var(--muted); letter-spacing: .06em;
 }
 .tabs button.on { color: var(--text); border-bottom-color: var(--safelight); }
@@ -244,11 +244,93 @@ textarea { height: auto; padding: 8px; resize: vertical; width: 100%; }
 
 .show-sm { display: none !important; }
 
+/* ---------- mode switch ---------- */
+.seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--ink-0); border: 1px solid var(--line); border-radius: 99px; }
+.seg button { height: 28px; padding: 0 14px; border: 0; border-radius: 99px; background: none; color: var(--muted); font-size: 13px; letter-spacing: .06em; }
+.seg button.on { background: var(--ink-3); color: var(--text); }
+body[data-mode="video"] .photo-only, body[data-mode="video"] .optbar, body[data-mode="video"] .workspace { display: none !important; }
+.topbar { flex-wrap: nowrap; }
+.topbar .seg { margin-right: auto; margin-left: 8px; }
+
+/* ---------- cards, progress (AI tab, render dialog) ---------- */
+.card { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--ink-0); }
+.card h3 { margin: 0; font-size: 14px; letter-spacing: .06em; }
+.card .btn { width: 100%; }
+.progress { display: flex; align-items: center; gap: 10px; font: 12px var(--font-data); color: var(--muted); }
+.progress .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--ink-2); overflow: hidden; }
+.progress .bar i { display: block; height: 100%; width: 0%; background: var(--safelight); transition: width .15s; }
+.mask-view { display: grid; grid-template-columns: 80px 1fr; gap: 10px; align-items: center; }
+.mask-view canvas { width: 80px; height: 80px; border-radius: 4px; border: 1px solid var(--line); background: #000; }
+
+/* ---------- video editor ---------- */
+.video-view {
+  grid-row: 2 / span 2; min-height: 0;
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px; grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top top" "player props" "timeline timeline";
+}
+.vtop {
+  grid-area: top; display: flex; align-items: center; gap: 10px; overflow-x: auto; scrollbar-width: none;
+  padding-block: 6px;
+  padding-left: max(14px, env(safe-area-inset-left, 0px)); padding-right: max(14px, env(safe-area-inset-right, 0px));
+  background: var(--ink-1); border-bottom: 1px solid var(--line);
+}
+.vtop::-webkit-scrollbar { display: none; }
+.vtop .btn { height: 32px; }
+.vmain { display: contents; }
+.vplayer { grid-area: player; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.vcanvas-wrap { position: relative; flex: 1; min-height: 0; display: grid; place-items: center; padding: 16px; }
+#vCanvas { max-width: 100%; max-height: 100%; width: auto; height: auto; background: #000; box-shadow: 0 10px 40px rgba(0,0,0,.5); border-radius: 2px; }
+.vempty {
+  position: absolute; inset: 16px; display: grid; place-content: center; justify-items: center; gap: 8px; text-align: center;
+  color: var(--muted); border: 1px dashed var(--line); border-radius: 10px; background: var(--ink-0);
+}
+.vempty b { color: var(--text); font-size: 16px; }
+.vcontrols { display: flex; align-items: center; gap: 10px; padding: 8px 14px; background: var(--ink-1); border-top: 1px solid var(--line); }
+.vcontrols input[type=range] { flex: 1; min-width: 0; }
+.vtime { font: 12px var(--font-data); font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+#vPlayIcon path { fill: currentColor; stroke: none; }
+.vprops { grid-area: props; min-height: 0; overflow-y: auto; background: var(--ink-1); border-left: 1px solid var(--line); padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 12px; }
+.vprops h3 { margin: 4px 0 0; font-size: 11px; font-weight: 500; letter-spacing: .14em; color: var(--muted); }
+.vprops .clip-head { display: flex; align-items: center; gap: 6px; }
+.vprops .clip-head b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vprops .tag { font: 10.5px var(--font-data); padding: 2px 6px; border-radius: 4px; background: var(--ink-3); color: var(--muted); letter-spacing: .08em; }
+.vprops .row > span:first-child { min-width: 5em; }
+.vprops input[type=text] { flex: 1; }
+.vtimeline-wrap { grid-area: timeline; overflow-x: auto; background: var(--ink-1); border-top: 1px solid var(--line); padding: 10px 0 12px; }
+.vtimeline { position: relative; display: flex; gap: 4px; padding: 0 max(14px, env(safe-area-inset-right, 0px)) 0 max(14px, env(safe-area-inset-left, 0px)); width: max-content; min-width: 100%; }
+.vclip {
+  position: relative; flex: none; height: 64px; border-radius: 6px; overflow: hidden; cursor: pointer;
+  border: 2px solid transparent; background: var(--ink-2) center / auto 100% repeat-x;
+  user-select: none; -webkit-user-select: none;
+}
+.vclip.on { border-color: var(--safelight); }
+.vclip.dragging { opacity: .5; }
+.vclip .vlabel {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; display: flex; justify-content: space-between; gap: 4px;
+  font: 10.5px var(--font-data); color: #fff; background: linear-gradient(transparent, rgba(0,0,0,.75));
+  white-space: nowrap; overflow: hidden;
+}
+.vclip .vtr { position: absolute; left: -2px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; border-radius: 50%; background: var(--safelight); border: 2px solid var(--ink-1); }
+.vclip .vcap { position: absolute; top: 3px; left: 6px; font-size: 10px; color: #fff; text-shadow: 0 1px 2px #000; }
+.vadd { flex: none; width: 64px; height: 64px; border-radius: 6px; border: 1px dashed var(--line); background: none; color: var(--muted); display: grid; place-items: center; }
+.vadd:hover { color: var(--safelight); border-color: var(--safelight); }
+.vplayhead { position: absolute; top: -6px; bottom: -6px; width: 2px; background: #fff; box-shadow: 0 0 0 1px rgba(0,0,0,.5); pointer-events: none; z-index: 2; }
+.vdrop { position: absolute; top: 0; bottom: 0; width: 3px; background: var(--safelight); border-radius: 2px; pointer-events: none; z-index: 3; }
+
 /* ---------- phone ---------- */
 @media (max-width: 760px) {
   .hide-sm { display: none !important; }
   .show-sm { display: inline-grid !important; }
-  .brand .sub { display: none; }
+  .brand .sub, .brand b { display: none; }
+  .topbar { gap: 6px; }
+  .actions { gap: 2px; }
+  .ibtn { width: 32px; }
+  .seg button { padding: 0 11px; }
+  .topbar .seg { margin-left: 2px; }
+  .video-view { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); grid-template-areas: "top" "player" "timeline" "props"; }
+  .vcanvas-wrap { flex: none; height: min(42vh, 360px); padding: 10px; }
+  .vprops { border-left: 0; border-top: 1px solid var(--line); padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+  .vtimeline-wrap { border-top: 1px solid var(--line); }
   .btn { padding: 0 11px; }
   .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   .stage { grid-row: 1; }
