@@ -9,6 +9,7 @@ const { $, clamp } = D;
 const ORT_VERSION = '1.17.3';
 const ORT_CDN = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 const MODEL_URL = 'models/u2netp.onnx';
+const MODEL_B64_URL = 'models/u2netp.onnx.b64.txt'; // same bytes as base64 text, for hosts that only serve text
 const SIZE = 320;
 
 let session = null, loading = null;
@@ -62,7 +63,15 @@ async function getSession() {
     const local = new URL('vendor/', document.baseURI).href;
     ort.env.wasm.wasmPaths = (await exists(local + 'ort-wasm-simd.wasm')) ? local : ORT_CDN;
     setProgress(8, '下載 AI 模型…');
-    const bytes = await fetchWithProgress(MODEL_URL, p => setProgress(8 + p * 72, `下載 AI 模型 ${Math.round(p * 100)}%`));
+    const onPct = p => setProgress(8 + p * 72, `下載 AI 模型 ${Math.round(p * 100)}%`);
+    let bytes;
+    try { bytes = await fetchWithProgress(MODEL_URL, onPct); }
+    catch (err) {
+      const text = new TextDecoder().decode(await fetchWithProgress(MODEL_B64_URL, onPct));
+      const bin = atob(text.replace(/\s+/g, ''));
+      bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    }
     setProgress(82, '啟動模型…');
     session = await ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' });
     return session;
