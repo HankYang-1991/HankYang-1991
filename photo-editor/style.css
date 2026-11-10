@@ -151,9 +151,9 @@ textarea { height: auto; padding: 8px; resize: vertical; width: 100%; }
   display: flex; flex-direction: column; min-height: 0;
   background: var(--ink-1); border-left: 1px solid var(--line);
 }
-.tabs { display: grid; grid-template-columns: repeat(5, auto); border-bottom: 1px solid var(--line); }
+.tabs { display: grid; grid-template-columns: repeat(6, auto); border-bottom: 1px solid var(--line); }
 .tabs button {
-  height: 40px; padding: 0 4px; white-space: nowrap; background: none; border: 0; border-bottom: 2px solid transparent;
+  height: 40px; padding: 0 2px; white-space: nowrap; font-size: 13px; letter-spacing: .02em; background: none; border: 0; border-bottom: 2px solid transparent;
   color: var(--muted); letter-spacing: .06em;
 }
 .tabs button.on { color: var(--text); border-bottom-color: var(--safelight); }
@@ -243,6 +243,12 @@ textarea { height: auto; padding: 8px; resize: vertical; width: 100%; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
 
 .show-sm { display: none !important; }
+
+/* ---------- flash looks ---------- */
+.flash-grid button small { font-size: 10.5px; color: var(--muted); margin-top: -2px; }
+.flash-grid button.on canvas { border-color: var(--safelight); box-shadow: 0 0 0 1px var(--safelight); }
+.flash-grid button.on span { color: var(--safelight); }
+#flashCtl .row input[type=text] { width: 7.5em; flex: none; font-family: var(--font-data); }
 
 /* ---------- mode switch ---------- */
 .seg { display: inline-flex; padding: 3px; gap: 2px; background: var(--ink-0); border: 1px solid var(--line); border-radius: 99px; }

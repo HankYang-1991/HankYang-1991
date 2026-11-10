@@ -1,6 +1,6 @@
 // Offline cache for the Darkroom PWA. Bump VERSION when files change.
-const VERSION = 'darkroom-v2';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'ai.js', 'video.js', 'manifest.webmanifest', 'icon.svg'];
+const VERSION = 'darkroom-v3';
+const FILES = ['./', 'index.html', 'style.css', 'app.js', 'flash.js', 'ai.js', 'video.js', 'manifest.webmanifest', 'icon.svg'];
 // the AI model and runtime are cached the first time they are used
 const CACHE_HOSTS = [location.origin, 'https://cdn.jsdelivr.net', 'https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 

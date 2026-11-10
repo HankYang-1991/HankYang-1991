@@ -79,6 +79,7 @@
         <button role="tab" data-tab="layers" class="on">圖層</button>
         <button role="tab" data-tab="adjust">調整</button>
         <button role="tab" data-tab="filters">濾鏡</button>
+        <button role="tab" data-tab="flash">閃光燈</button>
         <button role="tab" data-tab="ai">AI 去背</button>
         <button role="tab" data-tab="image">影像</button>
       </div>
@@ -111,6 +112,20 @@
       <div class="tab-body" data-body="filters" hidden>
         <p class="note">點一下套用到目前圖層，可用復原撤銷。</p>
         <div class="filter-grid" id="filterGrid"></div>
+      </div>
+
+      <div class="tab-body" data-body="flash" hidden>
+        <p class="note">模擬小型相機直打閃光燈：主體亮、背景暗、高光柔亮，加上各家相機的發色。點一個風格即時預覽，微調後按「套用」。</p>
+        <div class="filter-grid flash-grid" id="flashGrid"></div>
+        <section class="card" id="flashCtl" hidden>
+          <h3 id="flashName"></h3>
+          <div class="row"><span>閃光位置</span><b class="note" id="flashPos">自動（畫面中央）</b></div>
+          <div class="grid2"><button class="btn sm" id="flashPick">點畫面指定</button><button class="btn sm" id="flashAuto">回到自動</button></div>
+          <div id="flashSliders" class="adj-list"></div>
+          <label class="row"><input type="checkbox" id="flashDate"><span>日期戳記</span><input type="text" id="flashDateText" aria-label="日期文字" maxlength="14"></label>
+          <div class="btn-row"><button class="btn" id="flashCancel">取消預覽</button><button class="btn primary" id="flashApply">套用</button></div>
+        </section>
+        <p class="note small">各風格為外觀模擬，非相機廠商官方色彩設定。</p>
       </div>
 
       <div class="tab-body" data-body="ai" hidden>
@@ -271,6 +286,7 @@
 </div>
 <!--/APP-->
 <script src="app.js"></script>
+<script src="flash.js"></script>
 <script src="ai.js"></script>
 <script src="video.js"></script>
 </body>

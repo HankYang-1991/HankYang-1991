@@ -554,6 +554,7 @@ function applyText() {
 }
 
 /* ----- pointer routing (with two-finger pinch on any tool) ----- */
+let pickHandler = null; // one-shot "tap the image" callback used by other modules
 const ptrs = new Map();
 let action = null, pinch = null, spaceDown = false, blockUntilUp = false;
 
@@ -570,6 +571,7 @@ view.addEventListener('pointerdown', e => {
     return;
   }
   if (ptrs.size > 2 || blockUntilUp) return;
+  if (pickHandler && e.button === 0) { const h = pickHandler; pickHandler = null; setCursor(); h(toDoc(e)); blockUntilUp = true; return; }
   if (e.button === 2) return;
   const tool = (spaceDown || e.button === 1) ? 'hand' : S.tool;
   e.preventDefault();
@@ -692,7 +694,12 @@ function applyAdjust() {
   toast('已套用調整');
 }
 // Painting or editing while an adjustment preview is open bakes the preview first, so nothing is lost.
-function commitAdjustIfAny() { if (S.preview && adjActive()) applyAdjust(); else if (S.preview) resetAdjust(false); }
+// A module with its own live preview (flash.js) registers here so edits bake its preview first.
+let previewOwner = null;
+function commitAdjustIfAny() {
+  if (S.preview && previewOwner) { const o = previewOwner; previewOwner = null; o.apply(); return; }
+  if (S.preview && adjActive()) applyAdjust(); else if (S.preview) resetAdjust(false);
+}
 
 function hueMatrix(deg) {
   const a = deg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a);
@@ -1215,6 +1222,9 @@ function loadCanvasAsDocument(canvas, name) {
 window.Darkroom = {
   S, $, $$, clamp, isTouch, makeCanvas, copyCanvas, newLayer, touch, activeLayer, commit, render, fitView,
   toast, openModal, closeModal, commitAdjustIfAny, gaussBlur, hexToRgb, saveBlob, loadCanvasAsDocument, setTab,
+  setPreviewOwner(o) { previewOwner = o; },
+  pickPoint(fn) { pickHandler = fn; view.style.cursor = 'crosshair'; },
+  get currentTab() { return currentTab; },
   flatten() { const c = makeCanvas(S.w, S.h); composite(c, c.getContext('2d'), false); return c; },
   get downloadsReady() { return !!downloadsApi; },
 };
