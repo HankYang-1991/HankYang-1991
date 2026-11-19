@@ -52,6 +52,7 @@ function rgbToHex(r, g, b) { return '#' + [r, g, b].map(v => v.toString(16).padS
 
 /* ================= history ================= */
 const H = { stack: [], idx: -1, max: 30 };
+let origSnap = null; // what "原圖" compares against
 
 function snapshot(label) {
   const prev = H.stack[H.idx];
@@ -71,9 +72,11 @@ function commit(label) {
   H.stack.push(snapshot(label));
   if (H.stack.length > H.max) H.stack.shift();
   H.idx = H.stack.length - 1;
+  if (H.stack.length === 1) origSnap = H.stack[0]; // first state of a newly opened document
   afterChange();
 }
 function restore(snap) {
+  dropPreview();
   S.w = snap.w; S.h = snap.h;
   S.layers = snap.layers.map(x => wrapLayer(x, copyCanvas(x.canvas)));
   S.active = clamp(snap.active, 0, S.layers.length - 1);
@@ -82,6 +85,8 @@ function restore(snap) {
   afterChange();
 }
 function undo() {
+  // with a preview open, "undo" means: take back the preview, not the last saved step
+  if (session) { session.cancel(); toast('已取消預覽'); return; }
   if (H.idx <= 0) return;
   const label = H.stack[H.idx].label;
   H.idx--; restore(H.stack[H.idx]); toast('復原：' + label);
@@ -95,7 +100,8 @@ function afterChange() {
   $('#btnRedo').disabled = H.idx >= H.stack.length - 1;
   refreshLayers(); refreshInfo(); render();
   filterThumbsDirty = true;
-  if (currentTab === 'filters') buildFilterThumbs();
+  if (currentTab === 'style') buildFilterThumbs();
+  document.dispatchEvent(new Event('darkroom:change'));
 }
 
 /* ================= document ================= */
@@ -103,6 +109,7 @@ function newDocument(w, h, bg = '#ffffff', name = '背景') {
   S.w = w; S.h = h;
   const l = newLayer(name);
   if (bg !== 'transparent') { l.ctx.fillStyle = bg; l.ctx.fillRect(0, 0, w, h); }
+  dropPreview();
   S.layers = [l]; S.active = 0; S.crop = null;
   H.stack = []; H.idx = -1;
   resetAdjust(false);
@@ -148,6 +155,7 @@ async function openFile(file, asLayer = false) {
   const l = newLayer(base);
   l.ctx.imageSmoothingQuality = 'high';
   l.ctx.drawImage(img, 0, 0, w, h);
+  dropPreview();
   S.layers = [l]; S.active = 0; S.crop = null;
   H.stack = []; H.idx = -1;
   resetAdjust(false);
@@ -217,7 +225,7 @@ function applyStroke(ctx) {
 }
 function layerSource(l, i) {
   if (i !== S.active) return l.canvas;
-  if (S.preview) return S.preview;
+  if (S.preview && !comparing) return S.preview;
   if (S.stroke) {
     if (scratch.width !== l.canvas.width || scratch.height !== l.canvas.height) { scratch.width = l.canvas.width; scratch.height = l.canvas.height; }
     sctx.globalCompositeOperation = 'source-over'; sctx.globalAlpha = 1;
@@ -240,6 +248,26 @@ function composite(target, tctx, live = true) {
   tctx.restore();
 }
 
+let comparing = false, origCache = { snap: null, canvas: null };
+function originalCanvas() {
+  const sn = origSnap;
+  if (!sn) return null;
+  if (origCache.snap !== sn) {
+    const c = makeCanvas(sn.w, sn.h), x = c.getContext('2d');
+    sn.layers.forEach(l => { if (!l.visible || l.opacity <= 0) return; x.globalAlpha = l.opacity; x.globalCompositeOperation = l.blend; x.drawImage(l.canvas, 0, 0); });
+    origCache = { snap: sn, canvas: c };
+  }
+  return origCache.canvas;
+}
+function setComparing(on) {
+  if (comparing === on || !S.w) return;
+  comparing = on;
+  $('#btnCompare').classList.toggle('on', on);
+  const badge = $('#cmpBadge');
+  badge.hidden = !on;
+  badge.textContent = S.preview ? '套用前' : '原圖';
+  render();
+}
 let rafPending = false;
 function render() { if (!rafPending) { rafPending = true; requestAnimationFrame(draw); } }
 function draw() {
@@ -268,7 +296,12 @@ function draw() {
   vctx.setTransform(dpr * S.zoom, 0, 0, dpr * S.zoom, dpr * S.panX, dpr * S.panY);
   vctx.imageSmoothingEnabled = S.zoom < 2;
   vctx.imageSmoothingQuality = 'high';
-  vctx.drawImage(comp, 0, 0);
+  let src = comp, ox = 0, oy = 0, ow = S.w, oh = S.h;
+  if (comparing && !S.preview) {
+    const o = originalCanvas();
+    if (o) { const k = Math.min(S.w / o.width, S.h / o.height); ow = o.width * k; oh = o.height * k; ox = (S.w - ow) / 2; oy = (S.h - oh) / 2; src = o; }
+  }
+  vctx.drawImage(src, ox, oy, ow, oh);
 
   vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   if (S.crop) drawCropOverlay(x0, y0, dw, dh);
@@ -625,6 +658,7 @@ function setTool(t) {
   $('#toolName').textContent = TOOL_NAMES[t];
   $$('#optbar [data-for]').forEach(el => { el.hidden = !el.dataset.for.split(' ').includes(t); });
   setCursor(); render();
+  if (typeof syncNav === 'function' && $('#mnav')) syncNav();
 }
 function setColor(hex) {
   S.color = hex; $('#optColor').value = hex;
@@ -664,7 +698,8 @@ function queueAdjust() { if (!adjQueued) { adjQueued = true; requestAnimationFra
 function runAdjust() {
   adjQueued = false;
   const l = activeLayer(); if (!l) return;
-  if (!adjActive()) { S.preview = null; render(); return; }
+  if (!adjActive()) { if (session && session.owner === 'adjust') { S.preview = null; endPreview('adjust'); } render(); return; }
+  claimPreview('adjust');
   if (!adjSrc || adjSrc.id !== l.id || adjSrc.ver !== l.ver) {
     adjSrc = { id: l.id, ver: l.ver, data: l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height) };
   }
@@ -673,6 +708,7 @@ function runAdjust() {
   processAdjust(out, adj);
   if (!S.preview || S.preview.width !== out.width || S.preview.height !== out.height) S.preview = makeCanvas(out.width, out.height);
   S.preview.getContext('2d').putImageData(out, 0, 0);
+  if (!session) beginPreview({ owner: 'adjust', label: '調整', apply: applyAdjust, cancel: () => resetAdjust() });
   render();
 }
 function resetAdjust(rerender = true) {
@@ -681,7 +717,8 @@ function resetAdjust(rerender = true) {
     const i = $('#adj-' + k), o = $('#out-' + k);
     if (i) { i.value = 0; o.textContent = '0'; o.classList.remove('changed'); }
   });
-  S.preview = null; adjSrc = null;
+  adjSrc = null;
+  if (!session || session.owner === 'adjust') { S.preview = null; endPreview('adjust'); }
   if (rerender) render();
 }
 function applyAdjust() {
@@ -690,15 +727,38 @@ function applyAdjust() {
   const l = activeLayer();
   l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height);
   l.ctx.drawImage(S.preview, 0, 0);
-  touch(l); resetAdjust(false); commit('調整');
+  resetAdjust(false); touch(l); commit('調整');
   toast('已套用調整');
 }
-// Painting or editing while an adjustment preview is open bakes the preview first, so nothing is lost.
-// A module with its own live preview (flash.js) registers here so edits bake its preview first.
-let previewOwner = null;
+/* ---- live preview session: adjust, filters and flash looks share one bar (預覽列) ----
+   Only one preview exists at a time. Starting another, painting or any edit bakes the open one first,
+   so nothing the user set up is lost; undo/new document drops it. */
+let session = null; // { owner, label, apply(), cancel(), amount?, onAmount? }
+function claimPreview(owner) {
+  if (session && session.owner !== owner) { const o = session; session = null; showBar(); o.apply(); }
+}
+function beginPreview(sess) {
+  claimPreview(sess.owner);
+  session = sess; showBar();
+}
+function endPreview(owner) {
+  if (session && (!owner || session.owner === owner)) { session = null; showBar(); }
+}
+function dropPreview() {
+  if (session) { const o = session; session = null; showBar(); o.cancel(); }
+  S.preview = null;
+}
+function showBar() {
+  const s = session;
+  $('#pbar').hidden = !s;
+  if (!s) return;
+  $('#pbLabel').textContent = s.label;
+  $('#pbAmountWrap').hidden = !s.onAmount;
+  if (s.onAmount) { $('#pbAmount').value = s.amount ?? 100; $('#outPbAmount').textContent = $('#pbAmount').value + '%'; }
+}
 function commitAdjustIfAny() {
-  if (S.preview && previewOwner) { const o = previewOwner; previewOwner = null; o.apply(); return; }
-  if (S.preview && adjActive()) applyAdjust(); else if (S.preview) resetAdjust(false);
+  if (session) { session.apply(); return; }
+  S.preview = null;
 }
 
 function hueMatrix(deg) {
@@ -864,11 +924,12 @@ function softGlow(d, img) {
 let filterThumbsDirty = true;
 function buildFilterUI() {
   const grid = $('#filterGrid');
-  FILTERS.forEach(([key, label]) => {
+  FILTERS.forEach(([key, label, fn]) => {
+    if (!fn) return; // "原圖" is the compare button now
     const b = document.createElement('button');
     b.dataset.filter = key;
     b.innerHTML = `<canvas width="120" height="120"></canvas><span>${label}</span>`;
-    b.addEventListener('click', () => applyFilter(key));
+    b.addEventListener('click', () => previewFilter(key));
     grid.appendChild(b);
   });
 }
@@ -884,20 +945,50 @@ function buildFilterThumbs() {
   $$('#filterGrid button').forEach(b => {
     const f = FILTERS.find(x => x[0] === b.dataset.filter);
     const img = new ImageData(new Uint8ClampedArray(base.data), 120, 120);
-    if (f[2]) f[2](img.data, img);
+    f[2](img.data, img);
     b.querySelector('canvas').getContext('2d').putImageData(img, 0, 0);
   });
 }
-function applyFilter(key) {
+let filt = null; // { layerId, ver, src, out, key, name, amount }
+function previewFilter(key) {
   const f = FILTERS.find(x => x[0] === key);
-  if (!f[2]) { toast('原圖：未變更（要回到先前狀態請用復原）'); return; }
-  commitAdjustIfAny();
+  if (!f || !f[2]) return;
+  claimPreview('filter');
   const l = activeLayer();
-  const img = l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height);
-  f[2](img.data, img);
-  l.ctx.putImageData(img, 0, 0);
-  touch(l); commit('濾鏡：' + f[1]);
-  toast('已套用「' + f[1] + '」');
+  if (!filt || filt.layerId !== l.id || filt.ver !== l.ver) filt = { layerId: l.id, ver: l.ver, src: l.ctx.getImageData(0, 0, l.canvas.width, l.canvas.height) };
+  const out = new ImageData(new Uint8ClampedArray(filt.src.data), filt.src.width, filt.src.height);
+  f[2](out.data, out);
+  Object.assign(filt, { out, key, name: f[1], amount: 100 });
+  paintFilter();
+  $$('#filterGrid button').forEach(b => b.classList.toggle('on', b.dataset.filter === key));
+  beginPreview({ owner: 'filter', label: '濾鏡：' + f[1], amount: 100, onAmount: v => { filt.amount = v; paintFilter(); }, apply: applyFilterPreview, cancel: cancelFilterPreview });
+}
+function paintFilter() {
+  const { src, out, amount } = filt, a = amount / 100;
+  let img = out;
+  if (a < 1) {
+    img = new ImageData(new Uint8ClampedArray(out.data), out.width, out.height);
+    const d = img.data, o = src.data;
+    for (let k = 0; k < d.length; k++) d[k] = o[k] + (d[k] - o[k]) * a;
+  }
+  if (!S.preview || S.preview.width !== out.width || S.preview.height !== out.height) S.preview = makeCanvas(out.width, out.height);
+  S.preview.getContext('2d').putImageData(img, 0, 0);
+  render();
+}
+function applyFilterPreview() {
+  const l = activeLayer(), name = filt.name, amt = filt.amount;
+  l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height);
+  l.ctx.drawImage(S.preview, 0, 0);
+  S.preview = null; filt = null;
+  $$('#filterGrid button').forEach(b => b.classList.remove('on'));
+  endPreview('filter');
+  touch(l); commit('濾鏡：' + name);
+  toast(`已套用「${name}」${amt < 100 ? ' ' + amt + '%' : ''}`);
+}
+function cancelFilterPreview() {
+  S.preview = null; filt = null;
+  $$('#filterGrid button').forEach(b => b.classList.remove('on'));
+  endPreview('filter'); render();
 }
 
 /* ================= image operations ================= */
@@ -955,7 +1046,7 @@ function refreshLayers() {
     tc.drawImage(l.canvas, (92 - l.canvas.width * s) / 2, (68 - l.canvas.height * s) / 2, l.canvas.width * s, l.canvas.height * s);
     li.addEventListener('click', ev => {
       if (ev.target.closest('.eye')) { l.visible = !l.visible; commit(l.visible ? '顯示圖層' : '隱藏圖層'); return; }
-      if (S.active !== i) { commitAdjustIfAny(); S.active = i; refreshLayers(); render(); filterThumbsDirty = true; if (currentTab === 'filters') buildFilterThumbs(); }
+      if (S.active !== i) { commitAdjustIfAny(); S.active = i; refreshLayers(); render(); filterThumbsDirty = true; if (currentTab === 'style') buildFilterThumbs(); }
     });
     $('.lname', li).addEventListener('dblclick', () => renameLayer(l, li));
     ul.appendChild(li);
@@ -1064,26 +1155,60 @@ async function saveBlob(blob, name) {
 /* ================= modals, tabs, toast ================= */
 let openDlg = null;
 function openModal(sel) { closeModal(); openDlg = $(sel); openDlg.hidden = false; $('#scrim').hidden = false; }
-function closeModal() { if (openDlg) openDlg.hidden = true; openDlg = null; if (!$('#panel').classList.contains('open')) $('#scrim').hidden = true; }
+function closeModal() { if (openDlg) openDlg.hidden = true; openDlg = null; $('#scrim').hidden = true; }
 $$('[data-close]').forEach(b => b.addEventListener('click', closeModal));
-$('#scrim').addEventListener('click', () => { if (openDlg) closeModal(); else togglePanel(false); });
+$('#scrim').addEventListener('click', closeModal);
 
-let currentTab = 'layers';
+let currentTab = 'style';
 function setTab(t) {
   currentTab = t;
   $$('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   $$('.tab-body').forEach(b => { b.hidden = b.dataset.body !== t; });
-  if (t === 'filters') requestAnimationFrame(buildFilterThumbs);
+  if (t === 'style') requestAnimationFrame(buildFilterThumbs);
+  syncNav();
   document.dispatchEvent(new CustomEvent('darkroom:tab', { detail: t }));
 }
 $$('.tabs button').forEach(b => b.addEventListener('click', () => setTab(b.dataset.tab)));
+// Phone: the panel is docked under the photo, so the photo shrinks to stay fully visible while you choose.
+const isPhone = () => matchMedia('(max-width: 760px)').matches;
 function togglePanel(force) {
   const p = $('#panel'), open = force ?? !p.classList.contains('open');
+  if (p.classList.contains('open') === open) return;
   p.classList.toggle('open', open);
-  $('#scrim').hidden = !open && !openDlg;
+  syncNav();
+  if (isPhone()) requestAnimationFrame(fitView);
 }
-$('#btnPanel').addEventListener('click', () => togglePanel());
+function setToolsOpen(open) {
+  document.body.classList.toggle('tools-open', open);
+  syncNav();
+  if (isPhone()) requestAnimationFrame(fitView);
+}
+function syncNav() {
+  const panelOpen = $('#panel').classList.contains('open'), tools = document.body.classList.contains('tools-open');
+  $$('#mnav button').forEach(b => {
+    const n = b.dataset.nav;
+    b.classList.toggle('on', n === 'tools' ? tools : n === 'crop' ? S.tool === 'crop' : panelOpen && n === currentTab);
+  });
+}
+$$('#mnav button').forEach(b => b.addEventListener('click', () => {
+  const n = b.dataset.nav;
+  if (n === 'tools') { const open = !document.body.classList.contains('tools-open'); togglePanel(false); setToolsOpen(open); if (open && S.tool === 'crop') setTool('hand'); return; }
+  if (n === 'crop') { togglePanel(false); setToolsOpen(false); setTool(S.tool === 'crop' ? 'hand' : 'crop'); return; }
+  setToolsOpen(false);
+  if (S.tool === 'crop') setTool('hand');
+  if ($('#panel').classList.contains('open') && currentTab === n) togglePanel(false);
+  else { setTab(n); togglePanel(true); }
+}));
 $('#sheetGrip').addEventListener('click', () => togglePanel(false));
+
+// preview bar + compare
+$('#pbApply').addEventListener('click', () => { if (session) session.apply(); });
+$('#pbCancel').addEventListener('click', () => { if (session) { const o = session; o.cancel(); } });
+$('#pbAmount').addEventListener('input', e => { if (session && session.onAmount) { session.amount = +e.target.value; $('#outPbAmount').textContent = e.target.value + '%'; session.onAmount(+e.target.value); } });
+const cmp = $('#btnCompare');
+cmp.addEventListener('pointerdown', e => { e.preventDefault(); cmp.setPointerCapture(e.pointerId); setComparing(true); });
+['pointerup', 'pointercancel', 'lostpointercapture'].forEach(ev => cmp.addEventListener(ev, () => setComparing(false)));
+cmp.addEventListener('contextmenu', e => e.preventDefault());
 
 let toastTimer = 0;
 function toast(msg) {
@@ -1138,8 +1263,6 @@ lop.addEventListener('change', () => commit('圖層不透明度'));
 Object.keys(layerOps).forEach(id => $('#' + id).addEventListener('click', layerOps[id]));
 $$('[data-img]').forEach(b => b.addEventListener('click', () => imageOps[b.dataset.img]()));
 
-$('#adjApply').addEventListener('click', applyAdjust);
-$('#adjReset').addEventListener('click', () => resetAdjust());
 $('#txtApply').addEventListener('click', applyText);
 $('#rsApply').addEventListener('click', applyResize);
 $('#rsW').addEventListener('input', () => { if ($('#rsLock').checked) $('#rsH').value = Math.max(1, Math.round(+$('#rsW').value * S.h / S.w)); });
@@ -1185,7 +1308,8 @@ window.addEventListener('keydown', e => {
     return;
   }
   const mod = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
-  if (e.key === 'Escape') { if (openDlg) closeModal(); else if (S.crop) { S.crop = null; render(); } return; }
+  if (e.key === 'Escape') { if (openDlg) closeModal(); else if (S.crop) { S.crop = null; render(); } else if (session) session.cancel(); return; }
+  if (e.key === '\\') { e.preventDefault(); setComparing(true); return; }
   if (openDlg) return;
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); redo(); return; }
@@ -1199,13 +1323,14 @@ window.addEventListener('keydown', e => {
   if (mod) return;
   if (e.key === ' ') { e.preventDefault(); if (!spaceDown) { spaceDown = true; view.style.cursor = 'grab'; } return; }
   if (e.key === 'Enter' && S.crop) { applyCrop(); return; }
+  if (e.key === 'Enter' && session) { session.apply(); return; }
   if (e.key === '1') { const r = stage.getBoundingClientRect(); zoomAt(1 / S.zoom, r.width / 2, r.height / 2); return; }
   if (e.key === '[') { S.size = Math.max(1, Math.round(S.size / 1.2)); $('#optSize').value = S.size; $('#outSize').textContent = S.size; render(); return; }
   if (e.key === ']') { S.size = Math.min(400, Math.round(S.size * 1.2) + 1); $('#optSize').value = S.size; $('#outSize').textContent = S.size; render(); return; }
   if ((e.key === 'Delete' || e.key === 'Backspace')) { imageOps.clearLayer(); return; }
   if (KEYS[k]) setTool(KEYS[k]);
 });
-window.addEventListener('keyup', e => { if (e.key === ' ') { spaceDown = false; setCursor(); } });
+window.addEventListener('keyup', e => { if (e.key === ' ') { spaceDown = false; setCursor(); } if (e.key === '\\') setComparing(false); });
 
 new ResizeObserver(() => render()).observe(stage);
 window.addEventListener('beforeunload', e => { if (H.idx > 0) { e.preventDefault(); e.returnValue = ''; } });
@@ -1222,7 +1347,7 @@ function loadCanvasAsDocument(canvas, name) {
 window.Darkroom = {
   S, $, $$, clamp, isTouch, makeCanvas, copyCanvas, newLayer, touch, activeLayer, commit, render, fitView,
   toast, openModal, closeModal, commitAdjustIfAny, gaussBlur, hexToRgb, saveBlob, loadCanvasAsDocument, setTab,
-  setPreviewOwner(o) { previewOwner = o; },
+  beginPreview, endPreview, claimPreview,
   pickPoint(fn) { pickHandler = fn; view.style.cursor = 'crosshair'; },
   get currentTab() { return currentTab; },
   flatten() { const c = makeCanvas(S.w, S.h); composite(c, c.getContext('2d'), false); return c; },
@@ -1232,7 +1357,7 @@ window.Darkroom = {
 /* ================= boot ================= */
 buildAdjustUI();
 buildFilterUI();
-setTool('brush');
+setTool('hand');
 requestAnimationFrame(() => { makeSample(); toast('已載入範例照片，按「開啟」換成你的照片'); });
 
 if ('serviceWorker' in navigator && !window.claude && /^https:|^http:\/\/localhost/.test(location.href)) {

@@ -227,12 +227,12 @@ function runPreview() {
   pc.imageSmoothingQuality = 'high';
   pc.drawImage(look, 0, 0, previewCanvas.width, previewCanvas.height);
   D.S.preview = previewCanvas;
-  D.setPreviewOwner({ apply });
+  D.beginPreview({ owner: 'flash', label: `閃光：${current.name}`, apply, cancel });
   D.render();
 }
 function cancel() {
   if (D.S.preview === previewCanvas) D.S.preview = null;
-  D.setPreviewOwner(null);
+  D.endPreview('flash');
   current = null;
   $$('#flashGrid button').forEach(b => b.classList.remove('on'));
   $('#flashCtl').hidden = true;
@@ -242,7 +242,7 @@ function apply() {
   if (!current) return;
   const l = D.activeLayer();
   const look = renderLook(l.canvas, 1);
-  D.setPreviewOwner(null);
+  D.endPreview('flash');
   if (D.S.preview === previewCanvas) D.S.preview = null;
   l.ctx.clearRect(0, 0, l.canvas.width, l.canvas.height);
   l.ctx.drawImage(look, 0, 0);
@@ -257,7 +257,7 @@ function apply() {
 
 function choose(id) {
   // switching style keeps the user's position; sliders reset to the new style's defaults
-  if (D.S.preview && D.S.preview !== previewCanvas) D.commitAdjustIfAny(); // bake a pending adjustment first
+  D.claimPreview('flash'); // bake another pending preview (adjust / filter) first
   current = PRESETS.find(p => p.id === id);
   values = { amount: 1, flash: current.flash, reach: current.reach, bgDark: current.bgDark, smooth: current.smooth, white: current.white, bloom: current.bloom, grain: current.grain };
   CONTROLS.forEach(([k]) => { const i = $('#fl-' + k); i.value = Math.round(values[k] * 100); $('#out-fl-' + k).textContent = i.value; });
@@ -289,11 +289,8 @@ function buildUI() {
   $('#flashDateText').value = todayStamp();
   $('#flashDate').addEventListener('change', queuePreview);
   $('#flashDateText').addEventListener('input', queuePreview);
-  $('#flashApply').addEventListener('click', apply);
-  $('#flashCancel').addEventListener('click', cancel);
   $('#flashPick').addEventListener('click', () => {
     D.toast('點一下照片上的主體（例如臉）');
-    if (D.isTouch) document.getElementById('panel').classList.remove('open'), document.getElementById('scrim').hidden = true;
     D.pickPoint(p => {
       center = { x: clamp(p.x / D.S.w, 0, 1), y: clamp(p.y / D.S.h, 0, 1) };
       $('#flashPos').textContent = `指定（${Math.round(center.x * 100)}%, ${Math.round(center.y * 100)}%）`;
@@ -323,10 +320,9 @@ function buildThumbs() {
 }
 
 buildUI();
-document.addEventListener('darkroom:tab', e => {
-  if (e.detail === 'flash') requestAnimationFrame(buildThumbs);
-  else if (current && D.S.preview === previewCanvas) apply();   // leaving the tab keeps the look
-});
+// the preview bar stays on the photo, so leaving the tab no longer has to bake the look
+document.addEventListener('darkroom:tab', e => { if (e.detail === 'style') requestAnimationFrame(buildThumbs); });
+document.addEventListener('darkroom:change', () => { if (D.currentTab === 'style') requestAnimationFrame(buildThumbs); });
 // keep the preview following the layer if the user switches layers or undoes
 $('#layerList').addEventListener('click', () => { thumbsKey = ''; if (current) queuePreview(); });
 
