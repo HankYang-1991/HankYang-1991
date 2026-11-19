@@ -34,6 +34,11 @@ Other features · 其他：
 - One-click switch between **NEC 2023 and NEC 2026**. The calculation method is the same for ≤ 1000 V. For > 1000 V the code references follow the 2026 move into the new Articles 235 and 245. 一鍵切換 NEC 2023 / 2026。
 - **HTML report** export with inputs, results, numbered calculation steps and NEC references, in the selected language. 匯出 HTML 計算書（含輸入、結果、步驟與條文）。
 - Save and open projects as JSON (all panels included). 專案存檔／開啟（含全部盤）。
+- **Live results** – every input change recalculates its tab; the first line of the results shows the answer with ✓ OK / ⚠ warnings / ✗ NG; a field that is not a number turns red, and the last valid result stays on screen, clearly marked. 輸入即自動計算；結果首行顯示答案與符合／警告／不符合；非數字欄位紅底標示，並保留上一次有效結果且明確標註。
+- **Never lose work** – New / Open / Save (Ctrl+S saves to the same file) / Save as, `*` in the title for unsaved changes, and the session is saved on close and restored on the next start. Shortcuts: Ctrl+N/O/S/E, Ctrl+Shift+S, F5, Delete. 新專案／開啟／儲存／另存新檔、標題列未儲存標記、關閉時自動保存並於下次開啟還原；快捷鍵。
+- The report export asks which tabs to include (the tabs you changed are pre-selected). 匯出報告可勾選頁面（預設為有修改的頁面）。
+
+Development specification 軟體開發規格書: [`docs/SPEC.md`](docs/SPEC.md) – scope, architecture, functional requirements, UI rules, data formats, tests, build and roadmap. It is updated with every change (`tests/test_spec.py` checks that it matches the code).
 
 ## Excel panel list · Excel 盤負載清單（桌面版）
 

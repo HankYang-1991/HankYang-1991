@@ -70,6 +70,66 @@ SUMMARY_FIELDS["secondary"] = SUMMARY_FIELDS["general"]
 
 CHILD_TITLES = {"primary": "grp_primary", "secondary": "grp_secondary"}
 
+# one-line answer per result kind: (summary key, label key or None, format)
+_HL_GENERAL = [("ocpd", "s_ocpd", "{} A"), ("wire_text", None, "{}"),
+               ("busway_text", None, "{}"), ("vd_pct", "s_vd", "{:.2f} %")]
+HEADLINE_FIELDS = {
+    "general": _HL_GENERAL, "feeder": _HL_GENERAL,
+    "primary": _HL_GENERAL, "secondary": _HL_GENERAL,
+    "motor": [("flc", "s_flc", "{} A"), ("ocpd", "s_ocpd_motor", "{:.0f} A"),
+              ("overload", "s_overload", "{:.1f} A"),
+              ("wire_text", None, "{}")],
+    "transformer": [("i_pri", "s_i_pri", "{:.1f} A"),
+                    ("i_sec", "s_i_sec", "{:.1f} A"),
+                    ("pri_ocpd", "s_pri_ocpd", "{} A"),
+                    ("sec_ocpd", "s_sec_ocpd", "{} A"),
+                    ("isc_ka", "s_isc", "{:.1f} kA")],
+    "mv_cable": [("wire_text", None, "{}"), ("ampacity", "s_ampacity",
+                                              "{} A")],
+    "tray": [("tray_text", None, "{}"), ("fill_pct", "s_tray_fill",
+                                         "{:.0f} %")],
+    "shortcircuit": [("max_fault_ka", "s_sc_max", "{:.1f} kA"),
+                     ("bus_count", "s_sc_buses", "{}")],
+    "harmonics": [("tdd", "s_h_tdd", "{:.2f} %"),
+                  ("tdd_limit", "s_h_tdd_lim", "{:g} %"),
+                  ("vthd", "s_h_vthd", "{:.2f} %"),
+                  ("ahf_text", "s_h_ahf", "{}")],
+}
+
+
+def result_status(res):
+    """'ng' if any check failed, 'warn' if there are warnings, else 'ok'."""
+    items = [res] + list(res.children.values())
+    if any(s.ok is False for r in items for s in r.steps):
+        return "ng"
+    if any(r.warnings for r in items):
+        return "warn"
+    return "ok"
+
+
+def warning_count(res):
+    return sum(len(r.warnings) for r in [res] + list(res.children.values()))
+
+
+def headline(res, lang):
+    """(one-line answer, status) for the top of the results area."""
+    parts = []
+    for key, label, fmt in HEADLINE_FIELDS.get(res.kind, []):
+        v = res.summary.get(key)
+        if v is None or v == "-" or v == "":
+            continue
+        try:
+            txt = fmt.format(v)
+        except (ValueError, TypeError):
+            txt = str(v)
+        parts.append(f"{tr(label, lang)} {txt}" if label else txt)
+    sec = res.children.get("secondary")
+    if res.kind == "transformer" and sec is not None:
+        t = sec.summary.get("busway_text") or sec.summary.get("wire_text")
+        if t:
+            parts.append(f"{tr('grp_secondary', lang)}: {t}")
+    return "  ·  ".join(parts), result_status(res), warning_count(res)
+
 
 def summary_rows(res, lang):
     rows = []

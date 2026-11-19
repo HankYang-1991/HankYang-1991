@@ -121,6 +121,119 @@ class GuiSmokeTest(unittest.TestCase):
             root.destroy()
             shutil.rmtree(d, ignore_errors=True)
 
+    def test_live_workflow(self):
+        """Edits recalculate by themselves; bad input keeps the last valid
+        result marked as stale; projects save / open / restore."""
+        import json
+        import shutil
+        import tempfile
+        from unittest import mock
+        from necalc import gui as G
+        d = tempfile.mkdtemp()
+        root = tk.Tk()
+        try:
+            self.assertEqual(G._num_value("1,500"), 1500.0)
+            self.assertEqual(G._num_value("1-1/2"), 1.5)
+            for bad in ("abc", "1/0", "nan", "2-3"):
+                with self.assertRaises(ValueError):
+                    G._num_value(bad)
+            app = G.App(root)
+            # every calculation tab has a result at start-up
+            for key in G.TAB_KEYS:
+                self.assertIn(key, app.results, key)
+            self.assertFalse(app.modified)
+            self.assertEqual(app.changed_tabs(), set())
+            # live update without pressing Calculate
+            app.v["br.value"].set("9600")
+            app.flush()
+            self.assertEqual(app.results["br"][1].summary["ocpd"], 100)
+            self.assertTrue(app.modified)
+            self.assertTrue(app.root.title().startswith("*"))
+            self.assertIn("100 A", app.heads["br"][0].cget("text"))
+            self.assertEqual(app.changed_tabs(), {"br"})
+            # invalid text: red field, last result kept and marked stale
+            app.v["br.value"].set("96x0")
+            app.flush()
+            self.assertIn("br", app.stale)
+            self.assertEqual(app.results["br"][1].summary["ocpd"], 100)
+            w, style = app._entries["br.value"][0]
+            self.assertEqual(str(w.cget("style")), "Bad.TEntry")
+            app.v["br.value"].set("1440")
+            app.flush()
+            self.assertNotIn("br", app.stale)
+            self.assertEqual(str(w.cget("style")), "TEntry")
+            # MV inputs also refresh the transformer (24.9 kV primary)
+            app.v["mv.mat"].set("al")
+            self.assertIn("xf", app._pending)
+            app.flush()
+            # list editors: harmonic drive with a fractional HP
+            app.v["hm.e.hp"].set("1/2")
+            app._lst_action("hm", "add")
+            self.assertEqual(app.harm_drives[-1].hp, 0.5)
+            app.flush()
+            self.assertIn("hm", app.results)
+            # the selected load row survives a live update
+            app.nb.select(5)
+            app.load_tv.selection_set("2")
+            root.update()
+            app.v["lc.l.name"].set("edited, not applied")
+            app.v["lc.div"].set("1.1")
+            app.flush()
+            root.update()
+            self.assertEqual(app.load_tv.selection(), ("2",))
+            self.assertEqual(app.v["lc.l.name"].get(), "edited, not applied")
+            app.v["lc.div"].set("1.0")
+            app.flush()
+            # copy the results
+            app.copy_results("br")
+            self.assertIn("A", root.clipboard_get())
+            # save / open / new
+            proj = os.path.join(d, "job.json")
+            self.assertTrue(app.save_project(proj))
+            self.assertFalse(app.modified)
+            self.assertIn("job.json", app.root.title())
+            app.v["br.value"].set("2000")
+            app.flush()
+            with mock.patch("necalc.gui.messagebox.askyesnocancel",
+                            return_value=False):
+                app.new_project()
+            self.assertIsNone(app.project_path)
+            self.assertEqual(app.v["br.value"].get(), "1440")
+            self.assertFalse(app.modified)
+            app.open_project(proj)
+            self.assertEqual(app.project_path, proj)
+            self.assertEqual(app.v["br.value"].get(), "1440")
+            self.assertIn("hm", app.changed_tabs())
+            # Ctrl+S saves to the same file without asking
+            app.v["mo.hp"].set("25")
+            app.flush()
+            with mock.patch("necalc.gui.filedialog.asksaveasfilename") as ask:
+                self.assertTrue(app.save_project())
+                ask.assert_not_called()
+            with open(proj, encoding="utf-8") as fh:
+                self.assertEqual(json.load(fh)["vars"]["mo.hp"], "25")
+            # report: only the chosen tabs
+            rep = os.path.join(d, "r.html")
+            app.export_html(path=rep, keys=["br", "mo"])
+            with open(rep, encoding="utf-8") as fh:
+                html = fh.read()
+            self.assertIn(app.t("tab_motor"), html)
+            self.assertNotIn(app.t("tab_harm"), html)
+            # session: closing never loses work
+            with mock.patch.dict(os.environ, {"APPDATA": d}):
+                app.v["xf.kva"].set("2000")
+                app.flush()
+                self.assertTrue(app.save_session())
+                root2 = tk.Toplevel(root)
+                app2 = G.App(root2, session=True)
+                self.assertEqual(app2.v["xf.kva"].get(), "2000")
+                self.assertEqual(app2.project_path, proj)
+                self.assertTrue(app2.modified)
+                self.assertIn("xf", app2.results)
+        finally:
+            root.destroy()
+            shutil.rmtree(d, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -911,6 +911,28 @@ TEXT = {
     "err_h_empty": ("Add at least one drive", "請至少新增一台變頻器"),
     "err_h_no_load": ("PCC load current is zero", "PCC 負載電流為零"),
 
+    # ---------------- desktop workflow ----------------
+    "new_project": ("New", "新專案"),
+    "save_as": ("Save as…", "另存新檔"),
+    "untitled": ("Untitled", "未命名"),
+    "live_note": ("Results update automatically as you type · F5 "
+                  "recalculate · Ctrl+S save",
+                  "輸入即自動計算 · F5 重新計算 · Ctrl+S 儲存"),
+    "copy": ("Copy", "複製"),
+    "copied_results": ("Results copied to the clipboard", "已複製計算結果"),
+    "auto_updated": ("Updated {time}", "已更新 {time}"),
+    "stale_note": ("{msg} — the result below is from the last valid input",
+                   "{msg} — 下方為上一次有效輸入的結果"),
+    "input_error_tag": ("input error", "輸入錯誤"),
+    "confirm_save": ("Save the changes to {name}?", "是否儲存 {name} 的變更？"),
+    "session_restored": ("Your last session was restored",
+                         "已還原上次的工作內容"),
+    "report_pick": ("Include in the report:", "報告包含："),
+    "ok_btn": ("OK", "確定"),
+    "hl_warn": ("{n} warning(s)", "{n} 項警告"),
+    "no_results": ("Nothing to export yet", "尚無可匯出的結果"),
+    "opened": ("Opened {file}", "已開啟 {file}"),
+
     # ---------------- Excel / CSV panel list ----------------
     "panel_list": ("Panels", "盤清單"),
     "new_panel": ("New panel", "新增盤"),

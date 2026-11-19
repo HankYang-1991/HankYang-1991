@@ -10,6 +10,7 @@ Creates dist/NEC-Calculator-<version>.zip containing
   mobile-web/                  offline copy of the browser version
   source/                      Python source, web port, examples, tests
   README.txt                   how to install and start (English / 中文)
+  軟體開發規格書.md             development specification (docs/SPEC.md)
 Only the Python standard library is used, so nothing else is installed.
 """
 import os
@@ -98,7 +99,14 @@ Contents / 內容
                          (Panel Load tab > Import Excel / CSV)
                          (盤負載計算頁 > 匯入 Excel / CSV)
    mobile-web/index.html browser version, works offline / 網頁版 (可離線)
+   軟體開發規格書.md      development specification / 軟體開發規格書
    source/               Python source code and tests / 原始碼與測試
+
+Tips / 操作提示
+   Results update as you type; Ctrl+S save, Ctrl+O open, Ctrl+N new,
+   Ctrl+E report, F5 recalculate. Your work is restored on the next start.
+   輸入即自動計算；Ctrl+S 儲存、Ctrl+O 開啟、Ctrl+N 新專案、Ctrl+E 報告、
+   F5 重新計算；關閉後下次開啟會自動還原工作內容。
 
 Modules / 功能
    Branch / feeder, motor, transformer (24.9 kV - 120 V), MV cable,
@@ -158,8 +166,10 @@ def build(out_dir=None):
         src = os.path.join(pkg, "source")
         for d in ("necalc", "examples", "tests", "docs", "tools", "web"):
             _copytree(os.path.join(ROOT, d), os.path.join(src, d))
-        for f in ("run_gui.py", "README.md"):
+        for f in ("run_gui.py", "README.md", "CLAUDE.md"):
             shutil.copy2(os.path.join(ROOT, f), src)
+        shutil.copy2(os.path.join(ROOT, "docs", "SPEC.md"),
+                     os.path.join(pkg, "軟體開發規格書.md"))
 
         target = os.path.join(out_dir, f"{NAME}-{__version__}.zip")
         execs = {"start_mac.command", "start_linux.sh", NAME + ".pyzw"}

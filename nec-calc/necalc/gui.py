@@ -1,7 +1,9 @@
 """Tkinter desktop GUI (English / 繁體中文) for the NEC design calculator."""
+import datetime
 import json
 import math
 import os
+import re
 import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import ttk, filedialog, messagebox
@@ -130,11 +132,77 @@ TRAY_EXAMPLE = [
 ]
 
 
+# which calculation each input belongs to (entry forms of the list editors
+# are not inputs until a row is added; "tr_form" feeds the capacity table)
+VAR_TABS = (("br.", ("br",)), ("mo.", ("mo",)), ("xf.", ("xf",)),
+            ("mv.", ("mv", "xf")), ("tr.c.", ("tr_form",)), ("tr.", ("tr",)),
+            ("lc.l.", ()), ("lc.", ("lc",)), ("sc.e.", ()), ("sc.", ("sc",)),
+            ("hm.e.", ()), ("hm.", ("hm",)))
+TAB_KEYS = ("br", "mo", "xf", "mv", "tr", "lc", "sc", "hm")  # notebook order
+TAB_TITLES = {"br": "tab_branch", "mo": "tab_motor", "xf": "tab_xfmr",
+              "mv": "tab_mv", "tr": "tab_tray", "lc": "tab_load",
+              "sc": "tab_sc", "hm": "tab_harm"}
+OPTIONAL_NUM = {"br.ocpd", "mo.fla", "mo.flc", "lc.l.df", "lc.flen"}
+LIVE_DELAY_MS = 350
+AUTOSAVE_MS = 120000
+
+_FRAC_RE = re.compile(r"^(?:(\d+)-)?(\d*\.?\d+)(?:/(\d+))?$")
+
+
+def _num_value(s):
+    """'1,500' -> 1500.0, '1-1/2' -> 1.5, '1/2' -> 0.5; ValueError if not
+    a finite number."""
+    t = str(s).strip().replace(",", "").replace(" ", "")
+    try:
+        x = float(t)
+    except ValueError:
+        m = _FRAC_RE.match(t)
+        if not m or (m.group(1) and not m.group(3)):
+            raise ValueError(s)
+        whole, num, den = m.groups()
+        x = float(num)
+        if den:
+            if float(den) == 0:
+                raise ValueError(s)
+            x /= float(den)
+        x += float(whole) if whole else 0.0
+    if not math.isfinite(x):
+        raise ValueError(s)
+    return x
+
+
 def _f(s, field="value"):
     try:
-        return float(str(s).strip())
+        return _num_value(s)
     except ValueError:
         raise E.CalcError("err_input", field=field)
+
+
+def _var_tabs(name):
+    for prefix, tabs in VAR_TABS:
+        if name.startswith(prefix):
+            return tabs
+    return ()
+
+
+def _numeric_var(name):
+    """Inputs whose text must be a number (blank allowed)."""
+    if name in OPTIONAL_NUM:
+        return True
+    d = DEFAULTS.get(name)
+    if not isinstance(d, str) or not d:
+        return False
+    try:
+        _num_value(d)
+        return True
+    except ValueError:
+        return False
+
+
+def _config_dir():
+    base = os.environ.get("APPDATA") or os.environ.get("XDG_CONFIG_HOME") \
+        or os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, "NEC-Calculator")
 
 
 class OptCombo(ttk.Combobox):
@@ -159,12 +227,28 @@ class OptCombo(ttk.Combobox):
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, session=False):
+        """session=True: restore the last session at start, save it on close
+        and every few minutes (the desktop program); tests leave it off."""
         self.root = root
         self.v = {}
         for k, d in DEFAULTS.items():
             self.v[k] = tk.BooleanVar(value=d) if isinstance(d, bool) \
                 else tk.StringVar(value=d)
+        self.project_path = None
+        self.modified = False
+        self.stale = set()        # tabs whose inputs are invalid
+        self._suspend = 0         # >0: var changes do not trigger work
+        self._pending = set()
+        self._after_id = None
+        self._auto = False        # True while a live recalculation runs
+        self._entries = {}        # numeric var -> [(widget, ttk style)]
+        self.heads = {}           # tab key -> (headline label, state label)
+        self._updated = {}        # tab key -> time of the last good result
+        self._tr_mode = "tray"
+        self._lc_mode = "feeder"
+        for k in self.v:
+            self.v[k].trace_add("write", lambda *_a, k=k: self._on_var(k))
         self.panels = [L.Panel("LP-1", "208Y/120", loads=[
             L.Load(**vars(x)) for x in PANEL_EXAMPLE])]
         self.cur_panel = 0
@@ -181,6 +265,13 @@ class App:
         self.current_tab = 0
         self._setup_style()
         self.build()
+        self._bind_keys()
+        restored = session and self.restore_session()
+        if not restored:
+            self.recalc_all()
+        if session:
+            root.protocol("WM_DELETE_WINDOW", self.on_close)
+            root.after(AUTOSAVE_MS, self._autosave_tick)
 
     # ------------------------------------------------------------------
     @property
@@ -214,13 +305,26 @@ class App:
         style.configure("Accent.TButton", foreground="white",
                         background="#1f6feb")
         style.map("Accent.TButton", background=[("active", "#1158c7")])
+        style.configure("Bad.TEntry", fieldbackground="#ffe1e1")
+        style.configure("Bad.TCombobox", fieldbackground="#ffe1e1")
 
     # ------------------------------------------------------------------
     def build(self):
+        self._suspend += 1
+        try:
+            self._build()
+        finally:
+            self._suspend -= 1
+        for name in self._entries:
+            self._validate(name)
+        self._title()
+
+    def _build(self):
         for w in self.root.winfo_children():
             w.destroy()
-        self.root.title(self.t("app_title"))
         self.texts = {}
+        self.heads = {}
+        self._entries = {}
 
         bar = ttk.Frame(self.root, padding=(8, 6))
         bar.pack(fill="x")
@@ -232,16 +336,22 @@ class App:
         OptCombo(bar, self.v["edition"], EDITIONS, self.lang,
                  labeler=lambda c: f"NFPA 70 - {c}", width=14,
                  command=self.on_edition).pack(side="left", padx=4)
-        ttk.Button(bar, text=self.t("export_html"),
-                   command=self.export_html).pack(side="right", padx=2)
-        ttk.Button(bar, text=self.t("save"),
-                   command=self.save_project).pack(side="right", padx=2)
-        ttk.Button(bar, text=self.t("open"),
-                   command=self.open_project).pack(side="right", padx=2)
+        for k, cmd in (("export_html", self.export_html),
+                       ("save_as", lambda: self.save_project(save_as=True)),
+                       ("save", self.save_project),
+                       ("open", self.open_project),
+                       ("new_project", self.new_project)):
+            ttk.Button(bar, text=self.t(k), command=cmd).pack(side="right",
+                                                              padx=2)
 
         ttk.Label(self.root, text=self.t("disclaimer"), foreground="#57606a",
                   wraplength=1200, padding=(8, 0, 8, 6)).pack(side="bottom",
                                                               fill="x")
+        sbar = ttk.Frame(self.root, padding=(8, 0, 8, 2))
+        sbar.pack(side="bottom", fill="x")
+        self.status_lbl = ttk.Label(sbar, text=self.t("live_note"),
+                                    foreground="#57606a")
+        self.status_lbl.pack(side="left")
         self.nb = ttk.Notebook(self.root)
         self.nb.pack(fill="both", expand=True, padx=6, pady=(0, 4))
         tabs = [("tab_branch", self.tab_branch), ("tab_motor", self.tab_motor),
@@ -257,6 +367,11 @@ class App:
         self.nb.bind("<<NotebookTabChanged>>", self._tab_changed)
         for key in list(self.results):
             self.render(key)
+        for key in list(self.results):
+            if key in self.stale:
+                self._set_state(key, self.t("input_error_tag"))
+            elif key in self._updated:
+                self._set_state(key)
 
     def _tab_changed(self, _e=None):
         try:
@@ -269,12 +384,191 @@ class App:
 
     def on_edition(self):
         # re-run calculations so code references follow the edition
-        for key, fn in (("br", self.calc_branch), ("mo", self.calc_motor),
-                        ("xf", self.calc_xfmr), ("mv", self.calc_mv),
-                        ("tr", self.calc_tray), ("lc", self._recalc_lc),
-                        ("sc", self.calc_sc), ("hm", self.calc_harm)):
-            if key in self.results:
-                fn()
+        self.recalc_all()
+
+    # ------------------------------------------------------------------
+    # live recalculation: every input change re-runs its tab
+    # ------------------------------------------------------------------
+    def _on_var(self, name):
+        if name in self._entries:
+            self._validate(name)
+        if self._suspend:
+            return
+        tabs = _var_tabs(name)
+        if tabs or name == "edition":
+            self._set_modified(True)
+        if tabs:
+            self.schedule(*tabs)
+
+    def schedule(self, *keys):
+        """Recalculate these tabs shortly (changes are coalesced)."""
+        self._pending.update(keys)
+        if self._after_id is not None:
+            try:
+                self.root.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+        self._after_id = self.root.after(LIVE_DELAY_MS, self.flush)
+
+    def _recalcs(self):
+        return {"br": self.calc_branch, "mo": self.calc_motor,
+                "mv": self.calc_mv, "xf": self.calc_xfmr,
+                "tr": self._recalc_tr, "lc": self._recalc_lc,
+                "sc": self.calc_sc, "hm": self.calc_harm}
+
+    def flush(self):
+        """Run the pending recalculations now."""
+        if self._after_id is not None:
+            try:
+                self.root.after_cancel(self._after_id)
+            except tk.TclError:
+                pass
+            self._after_id = None
+        keys, self._pending = self._pending, set()
+        if "tr_form" in keys and self._tr_mode == "capacity":
+            keys.add("tr")
+        fns = self._recalcs()
+        self._auto = True
+        try:
+            for key in ("br", "mo", "mv", "xf", "tr", "lc", "sc", "hm"):
+                if key in keys:
+                    fns[key]()
+        finally:
+            self._auto = False
+
+    def recalc_all(self):
+        self._pending.update(TAB_KEYS)
+        self.flush()
+
+    def recalc_current(self):
+        if self.current_tab < len(TAB_KEYS):
+            self._recalcs()[TAB_KEYS[self.current_tab]]()
+
+    def _recalc_tr(self):
+        if self._tr_mode == "capacity":
+            self.calc_capacity()
+        else:
+            self.calc_tray()
+
+    # ------------------------------------------------------------------
+    # status bar, title, project files, session
+    # ------------------------------------------------------------------
+    def status(self, msg, error=False):
+        lbl = getattr(self, "status_lbl", None)
+        if lbl is not None and lbl.winfo_exists():
+            now = datetime.datetime.now().strftime("%H:%M")
+            lbl.configure(text=f"{now}  {msg}",
+                          foreground="#cf222e" if error else "#1a7f37")
+
+    def _title(self):
+        name = os.path.basename(self.project_path) if self.project_path \
+            else self.t("untitled")
+        self.root.title(f"{'*' if self.modified else ''}{name} — "
+                        f"{self.t('app_title')}")
+
+    def _set_modified(self, flag=True):
+        if self.modified != flag:
+            self.modified = flag
+            self._title()
+
+    def _bind_keys(self):
+        mod = "Command" if self.root.tk.call("tk", "windowingsystem") == \
+            "aqua" else "Control"
+        for key, fn in (("n", self.new_project), ("o", self.open_project),
+                        ("s", self.save_project), ("e", self.export_html)):
+            self.root.bind_all(f"<{mod}-{key}>",
+                               lambda _e, fn=fn: (fn(), "break")[1])
+        self.root.bind_all(f"<{mod}-S>", lambda _e: (
+            self.save_project(save_as=True), "break")[1])
+        self.root.bind_all("<F5>", lambda _e: self.recalc_current())
+
+    def _confirm_discard(self):
+        """True when it is fine to replace the current project."""
+        if not self.modified:
+            return True
+        name = os.path.basename(self.project_path) if self.project_path \
+            else self.t("untitled")
+        ans = messagebox.askyesnocancel(self.t("save"),
+                                        self.t("confirm_save", name=name))
+        if ans is None:
+            return False
+        return self.save_project() if ans else True
+
+    def new_project(self):
+        if not self._confirm_discard():
+            return
+        self._suspend += 1
+        try:
+            keep = {"lang": self.lang, "edition": self.edition}
+            for k, d in DEFAULTS.items():
+                self.v[k].set(keep.get(k, d))
+        finally:
+            self._suspend -= 1
+        self.panels = [L.Panel("LP-1", "208Y/120", loads=[
+            L.Load(**vars(x)) for x in PANEL_EXAMPLE])]
+        self.cur_panel = 0
+        self.tray_cables = [TR.TrayCable(**vars(x)) for x in TRAY_EXAMPLE]
+        self.sc_segs = [SC.SCSegment(**vars(x)) for x in SC_EXAMPLE]
+        self.harm_drives = [HM.HarmDrive(**vars(x)) for x in HARM_EXAMPLE]
+        self._tr_mode, self._lc_mode = "tray", "feeder"
+        self.results.clear()
+        self.inputs.clear()
+        self.stale.clear()
+        self.project_path = None
+        self.modified = False
+        self.build()
+        self.recalc_all()
+        self.status(self.t("new_project"))
+
+    def _session_path(self):
+        return os.path.join(_config_dir(), "session.json")
+
+    def save_session(self):
+        """Keep the whole working state so closing never loses work."""
+        try:
+            d = {"format": "necalc-session", "version": 1,
+                 "project": self.project_dict(), "path": self.project_path,
+                 "modified": self.modified, "tab": self.current_tab,
+                 "tr_mode": self._tr_mode, "lc_mode": self._lc_mode}
+            path = self._session_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(d, fh, ensure_ascii=False)
+            os.replace(tmp, path)
+            return True
+        except (OSError, TypeError, ValueError):
+            return False
+
+    def restore_session(self):
+        try:
+            with open(self._session_path(), encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            return False
+        if not isinstance(d, dict) or d.get("format") != "necalc-session":
+            return False
+        self._tr_mode = d.get("tr_mode", "tray")
+        self._lc_mode = d.get("lc_mode", "feeder")
+        self.current_tab = int(d.get("tab", 0) or 0)
+        try:
+            self.load_project_dict(d["project"])
+        except (KeyError, TypeError, ValueError):
+            return False
+        self.project_path = d.get("path")
+        self.modified = bool(d.get("modified"))
+        self._title()
+        self.status(self.t("session_restored"))
+        return True
+
+    def _autosave_tick(self):
+        if self.modified:
+            self.save_session()
+        self.root.after(AUTOSAVE_MS, self._autosave_tick)
+
+    def on_close(self):
+        self.save_session()
+        self.root.destroy()
 
     # ------------------------------------------------------------------
     # small widget helpers
@@ -287,7 +581,11 @@ class App:
         return w
 
     def entry(self, name, width=24):
-        return lambda p: ttk.Entry(p, textvariable=self.v[name], width=width)
+        def make(p):
+            w = ttk.Entry(p, textvariable=self.v[name], width=width)
+            self._register(name, w, "TEntry")
+            return w
+        return make
 
     def combo(self, name, codes, labeler=None, command=None, width=22):
         return lambda p: OptCombo(p, self.v[name], codes, self.lang,
@@ -295,8 +593,32 @@ class App:
                                   command=command)
 
     def editable(self, name, values, width=22):
-        return lambda p: ttk.Combobox(p, textvariable=self.v[name],
-                                      values=list(values), width=width)
+        def make(p):
+            w = ttk.Combobox(p, textvariable=self.v[name],
+                             values=list(values), width=width)
+            self._register(name, w, "TCombobox")
+            return w
+        return make
+
+    def _register(self, name, widget, style):
+        if _numeric_var(name):
+            self._entries.setdefault(name, []).append((widget, style))
+
+    def _validate(self, name):
+        """Red field background while the text is not a number."""
+        raw = str(self.v[name].get()).strip()
+        bad = False
+        if raw:
+            try:
+                _num_value(raw)
+            except ValueError:
+                bad = True
+        for w, style in self._entries.get(name, ()):
+            try:
+                w.configure(style=("Bad." + style) if bad else style)
+            except tk.TclError:
+                pass
+        return not bad
 
     def check(self, name, text_key=""):
         return lambda p: ttk.Checkbutton(p, variable=self.v[name],
@@ -316,9 +638,26 @@ class App:
         parent.rowconfigure(row, weight=1)
         for c in range(colspan):
             parent.columnconfigure(c, weight=1)
-        txt = tk.Text(frm, wrap="word", font=self.mono, height=14,
+        if key != "ref":
+            hb = ttk.Frame(frm)
+            hb.pack(fill="x", pady=(0, 3))
+            ttk.Button(hb, text=self.t("copy"), width=8,
+                       command=lambda: self.copy_results(key)).pack(
+                side="right")
+            state = ttk.Label(hb, text="", foreground="#57606a")
+            state.pack(side="right", padx=6)
+            head = ttk.Label(hb, text="", font=(tkfont.nametofont(
+                "TkDefaultFont").cget("family"), 11, "bold"),
+                anchor="w", justify="left")
+            head.pack(side="left", fill="x", expand=True)
+            hb.bind("<Configure>", lambda e, h=head: h.configure(
+                wraplength=max(e.width - 260, 200)))
+            self.heads[key] = (head, state)
+        body = ttk.Frame(frm)
+        body.pack(fill="both", expand=True)
+        txt = tk.Text(body, wrap="word", font=self.mono, height=14,
                       background="#fbfcfd", relief="flat")
-        sb = ttk.Scrollbar(frm, command=txt.yview)
+        sb = ttk.Scrollbar(body, command=txt.yview)
         txt.configure(yscrollcommand=sb.set)
         txt.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
@@ -326,6 +665,7 @@ class App:
         txt.tag_configure("warn", foreground="#9a6700")
         txt.tag_configure("head", font=(self.mono[0], 11, "bold"),
                           foreground="#0b4f9c")
+        txt.configure(state="disabled")     # read-only; select + copy work
         self.texts[key] = txt
         return txt
 
@@ -461,16 +801,69 @@ class App:
         try:
             fn()
         except E.CalcError as e:
-            self._show_error(key, tr(e.key, self.lang, **e.params))
+            self._calc_failed(key, tr(e.key, self.lang, **e.params))
+            return False
         except (ValueError, KeyError, ZeroDivisionError) as e:
-            self._show_error(key, f"{self.t('error')}: {e}")
+            self._calc_failed(key, f"{self.t('error')}: {e}")
+            return False
+        self.stale.discard(key)
+        self._updated[key] = datetime.datetime.now().strftime("%H:%M:%S")
+        self._set_state(key)
+        return True
+
+    def _calc_failed(self, key, msg):
+        """A live update keeps the last valid result on screen (marked as
+        not matching the inputs); an explicit Calculate shows the error."""
+        if self._auto and key in self.results:
+            self.stale.add(key)
+            self._set_state(key, msg)
+            return
+        self.stale.add(key)
+        self._show_error(key, msg)
 
     def _show_error(self, key, msg):
         txt = self.texts.get(key)
         self.results.pop(key, None)
         if txt:
+            txt.configure(state="normal")
             txt.delete("1.0", "end")
             txt.insert("end", f"{self.t('error')}: {msg}", "ng")
+            txt.configure(state="disabled")
+        self._set_headline(key, None)
+        self._set_state(key, msg)
+
+    def _set_state(self, key, error=None):
+        if key not in self.heads:
+            return
+        head, state = self.heads[key]
+        if error:
+            msg = self.t("stale_note", msg=error) if key in self.results \
+                else error
+            state.configure(text="", foreground="#cf222e")
+            head.configure(text="✗ " + msg, foreground="#cf222e")
+            return
+        now = self._updated.get(key) or \
+            datetime.datetime.now().strftime("%H:%M:%S")
+        state.configure(text=self.t("auto_updated", time=now),
+                        foreground="#57606a")
+
+    def _set_headline(self, key, head):
+        if key not in self.heads:
+            return
+        lbl = self.heads[key][0]
+        if not head:
+            lbl.configure(text="")
+            return
+        text, status = head[0], head[1]
+        n = head[2] if len(head) > 2 else 0
+        badge, color = {
+            "ok": ("✓ " + self.t("ok"), "#1a7f37"),
+            "warn": ("⚠ " + self.t("ok") + " (" + self.t("hl_warn", n=n)
+                     + ")" if n else "⚠ " + self.t("ok"), "#9a6700"),
+            "ng": ("✗ " + self.t("ng"), "#cf222e")}.get(status,
+                                                         ("", "#0b4f9c"))
+        lbl.configure(text=(badge + "   " if badge else "") + text,
+                      foreground=color)
 
     def render(self, key):
         txt = self.texts.get(key)
@@ -478,15 +871,34 @@ class App:
         if not txt or not item:
             return
         title_key, res = item
+        txt.configure(state="normal")
         txt.delete("1.0", "end")
-        if callable(res):
-            res(txt)
+        try:
+            if callable(res):
+                res(txt)
+                head = getattr(res, "headline", None)
+                self._set_headline(key, head() if callable(head) else head)
+                return
+            self._render_result(txt, res)
+            for name, child in res.children.items():
+                txt.insert("end", "\n" + self.t(R.CHILD_TITLES.get(name,
+                                                                    name))
+                           + "\n", "head")
+                self._render_result(txt, child)
+            self._set_headline(key, R.headline(res, self.lang))
+        finally:
+            txt.configure(state="disabled")
+
+    def copy_results(self, key):
+        txt = self.texts.get(key)
+        if not txt:
             return
-        self._render_result(txt, res)
-        for name, child in res.children.items():
-            txt.insert("end", "\n" + self.t(R.CHILD_TITLES.get(name, name))
-                       + "\n", "head")
-            self._render_result(txt, child)
+        head = self.heads.get(key, (None,))[0]
+        text = (head.cget("text") + "\n\n" if head is not None and
+                head.cget("text") else "") + txt.get("1.0", "end").rstrip()
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.status(self.t("copied_results"))
 
     def _render_result(self, txt, res):
         rows = R.summary_rows(res, self.lang)
@@ -812,6 +1224,7 @@ class App:
             tv.column(c, width=wdt, anchor="w")
         tv.pack(fill="both", expand=True)
         tv.bind("<<TreeviewSelect>>", self._tray_select)
+        tv.bind("<Delete>", lambda _e: self.tray_delete())
         self.tray_tv = tv
         self._tray_refresh()
         self.results_area(f, "tr")
@@ -867,6 +1280,10 @@ class App:
                      ("ins", c.ins_level)):
             self.v["tr.c." + k].set(v)
 
+    def _list_changed(self, key):
+        self._set_modified(True)
+        self.schedule(key)
+
     def tray_add(self):
         try:
             self.tray_cables.append(self._tray_form())
@@ -875,6 +1292,8 @@ class App:
                                  tr(e.key, self.lang, **e.params))
             return
         self._tray_refresh()
+        self._tr_mode = "tray"
+        self._list_changed("tr")
 
     def tray_update(self):
         sel = self.tray_tv.selection()
@@ -886,16 +1305,22 @@ class App:
                                      tr(e.key, self.lang, **e.params))
                 return
             self._tray_refresh()
+            self._tr_mode = "tray"
+            self._list_changed("tr")
 
     def tray_delete(self):
         sel = self.tray_tv.selection()
         if sel:
             del self.tray_cables[int(sel[0])]
             self._tray_refresh()
+            self._tr_mode = "tray"
+            self._list_changed("tr")
 
     def tray_clear(self):
         self.tray_cables = []
         self._tray_refresh()
+        self._tr_mode = "tray"
+        self._list_changed("tr")
 
     def _tray_input(self):
         g = lambda k: self.v["tr." + k].get()
@@ -907,6 +1332,8 @@ class App:
             cables=list(self.tray_cables), edition=self.edition)
 
     def calc_tray(self):
+        self._tr_mode = "tray"
+
         def run():
             x = self._tray_input()
             res = TR.design_tray(x)
@@ -923,6 +1350,8 @@ class App:
         self._run("tr", run)
 
     def calc_capacity(self):
+        self._tr_mode = "capacity"
+
         def run():
             g = lambda k: self.v["tr." + k].get()
             c = lambda k: self.v["tr.c." + k].get()
@@ -931,9 +1360,10 @@ class App:
                 kind, tray_type=g("type"), depth_in=_f(g("depth")),
                 n_cond=int(c("n")), material=c("mat"), ins_level=c("ins"),
                 od_in=_f(c("od") or 0))
-            self.results["tr"] = ("capacity_table",
-                                  self._capacity_renderer(kind, g("type"),
-                                                          tbl))
+            draw = self._capacity_renderer(kind, g("type"), tbl)
+            draw.headline = (self.t("cap_title", kind=opt(kind, self.lang),
+                                    tray=opt(g("type"), self.lang)), None)
+            self.results["tr"] = ("capacity_table", draw)
             self.inputs.pop("tr", None)
             self.render("tr")
         self._run("tr", run)
@@ -1077,6 +1507,7 @@ class App:
         tv.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         tv.bind("<<TreeviewSelect>>", self._load_select)
+        tv.bind("<Delete>", lambda _e: self.load_delete())
         self.load_tv = tv
         self.results_area(f, "lc", row=3)
         self._load_refresh()
@@ -1140,6 +1571,9 @@ class App:
 
     def panel_select(self, i):
         self._vars_to_panel()
+        tv = getattr(self, "load_tv", None)
+        if tv is not None and tv.winfo_exists():
+            tv.selection_remove(*tv.selection())
         self.cur_panel = max(0, min(i, len(self.panels) - 1))
         self._panel_to_vars()
         self._panel_list_refresh()
@@ -1155,6 +1589,7 @@ class App:
         self.panels.append(L.Panel(f"PANEL-{n}", cur.system,
                                    edition=self.edition))
         self.panel_select(len(self.panels) - 1)
+        self._list_changed("lc")
 
     def panel_delete(self, confirm=True):
         p = self.panels[self.cur_panel]
@@ -1171,6 +1606,7 @@ class App:
         self._panel_to_vars()
         self._panel_list_refresh()
         self._load_refresh()
+        self._list_changed("lc")
 
     def _panel(self):
         p = self._vars_to_panel(strict=True)
@@ -1187,7 +1623,10 @@ class App:
 
     def _load_refresh(self):
         tv = self.load_tv
-        tv.delete(*tv.get_children())
+        # same rows: update in place so the selection and form stay as is
+        same = len(tv.get_children()) == len(self.panel_loads)
+        if not same:
+            tv.delete(*tv.get_children())
         try:
             calc = L.calculate(self._panel())
         except (E.CalcError, ValueError, ZeroDivisionError):
@@ -1199,7 +1638,10 @@ class App:
                 vals = [ld.circuit, ld.name, opt(ld.category, self.lang),
                         ld.qty, ld.rating, ld.unit, ld.pf, ld.voltage,
                         ld.phases, "", "", "", "", "", "", ""]
-            tv.insert("", "end", iid=str(i), values=vals)
+            if same:
+                tv.item(str(i), values=vals)
+            else:
+                tv.insert("", "end", iid=str(i), values=vals)
 
     def _load_form(self):
         g = lambda k: self.v["lc.l." + k].get()
@@ -1237,6 +1679,7 @@ class App:
                                  tr(e.key, self.lang, **e.params))
             return
         self._load_refresh()
+        self._list_changed("lc")
 
     def load_add(self):
         self._load_guard(lambda: self.panel_loads.append(self._load_form()))
@@ -1253,17 +1696,20 @@ class App:
         if sel:
             del self.panel_loads[int(sel[0])]
             self._load_refresh()
+            self._list_changed("lc")
 
     def load_clear(self):
         self.panel_loads = []
         self._load_refresh()
+        self._list_changed("lc")
 
     def load_example(self):
         self.panel_loads = [L.Load(**vars(x)) for x in PANEL_EXAMPLE]
         self._load_refresh()
+        self._list_changed("lc")
 
     def _recalc_lc(self):
-        mode = getattr(self, "_lc_mode", "one")
+        mode = self._lc_mode
         if mode == "all":
             self.calc_all()
         else:
@@ -1304,8 +1750,18 @@ class App:
                     R._html_block(feeder_res, self.lang, parts)
                     h += "".join(parts)
                 return h
+            def headline():
+                txt = (f"{panel.name}  ·  {self.t('lc_design')} "
+                       f"{calc['design_kva']:.2f} kVA → "
+                       f"{calc['i_design']:.1f} A")
+                if not feeder_res:
+                    return txt, "ok"
+                hl, status, n = R.headline(feeder_res, self.lang)
+                return f"{txt}  ·  {hl}", status, n
+
             draw.html = html_frag
             draw.csv = lambda: R.load_calc_csv(panel, calc, self.lang)
+            draw.headline = headline
             self.results["lc"] = ("tab_load", draw)
             self.render("lc")
         self._run("lc", run)
@@ -1350,8 +1806,19 @@ class App:
                             txt.insert("end", f"  • {it['panel'].name}: "
                                        f"{n}\n")
 
+            def headline():
+                ok = [it for it in results if it["calc"]]
+                total = math.fsum(it["calc"]["design_kva"] for it in ok)
+                bad = any(it["error"] or it["feeder_error"] or (
+                    it["feeder"] and R.result_status(it["feeder"]) == "ng")
+                    for it in results)
+                return (f"{self.t('all_panels_title')} ({len(results)})  ·  "
+                        f"Σ {self.t('lc_design')} {total:.2f} kVA",
+                        "ng" if bad else "ok")
+
             draw.html = lambda: PIO.summary_html(results, self.lang)
             draw.csv = lambda: PIO.summary_csv(results, self.lang)
+            draw.headline = headline
             self.results["lc"] = ("tab_load", draw)
             self.render("lc")
         self._run("lc", run)
@@ -1422,9 +1889,14 @@ class App:
                 else:
                     self.panels[idx] = p
         self.cur_panel = self.panels.index(panels[0])
-        self._panel_to_vars()
+        self._suspend += 1
+        try:
+            self._panel_to_vars()
+        finally:
+            self._suspend -= 1
         self._panel_list_refresh()
         self._load_refresh()
+        self._set_modified(True)
         header = ("imported_n", dict(
             panels=len(panels), loads=sum(len(p.loads) for p in panels),
             file=os.path.basename(path)))
@@ -1444,8 +1916,7 @@ class App:
             return
         PIO.write_results(path, [it["panel"] for it in results], results,
                           self.lang, self.edition)
-        messagebox.showinfo(self.t("export_excel"),
-                            f"{self.t('saved_to')}: {path}")
+        self.status(f"{self.t('saved_to')}: {path}")
 
     def export_template(self, path=None):
         if path is None:
@@ -1455,8 +1926,7 @@ class App:
         if not path:
             return
         PIO.write_template(path, self.lang, self.edition)
-        messagebox.showinfo(self.t("excel_template"),
-                            f"{self.t('saved_to')}: {path}")
+        self.status(f"{self.t('saved_to')}: {path}")
 
     # ------------------------------------------------------------------
     # generic list editor (short-circuit path, harmonic drives)
@@ -1483,7 +1953,7 @@ class App:
             if conv is str:
                 kw[name] = raw
             else:
-                kw[name] = conv(_f(raw or 0, name))
+                kw[name] = conv(_f(raw or 0, self.t(name)))
         return spec["cls"](**kw)
 
     def _lst_items(self, key):
@@ -1537,10 +2007,15 @@ class App:
             elif action == "example":
                 ex = SC_EXAMPLE if key == "sc" else HARM_EXAMPLE
                 items[:] = [type(x)(**vars(x)) for x in ex]
-        except (E.CalcError, ValueError) as e:
+        except E.CalcError as e:
+            messagebox.showerror(self.t("error"),
+                                 tr(e.key, self.lang, **e.params))
+            return
+        except ValueError as e:
             messagebox.showerror(self.t("error"), str(e))
             return
         self._lst_refresh(key)
+        self._list_changed(key)
 
     def _lst_panel(self, parent, key, col, cols, widths, title_key):
         g = self.group(parent, title_key, col)
@@ -1551,6 +2026,7 @@ class App:
             tv.column(c, width=wdt, anchor="w")
         tv.pack(fill="both", expand=True)
         tv.bind("<<TreeviewSelect>>", lambda _e: self._lst_select(key))
+        tv.bind("<Delete>", lambda _e: self._lst_action(key, "delete"))
         self._lst_tv[key] = tv
         self._lst_refresh(key)
 
@@ -1716,12 +2192,80 @@ class App:
     # ------------------------------------------------------------------
     # export / project files
     # ------------------------------------------------------------------
-    def export_html(self):
-        order = ("br", "mo", "xf", "mv", "tr", "lc", "sc", "hm")
+    def changed_tabs(self):
+        """Tabs whose inputs differ from the defaults (the ones in use)."""
+        out = set()
+        for k, d in DEFAULTS.items():
+            if self.v[k].get() != d:
+                out.update(t for t in _var_tabs(k) if t in TAB_KEYS)
+        for key, items, example in (
+                ("tr", self.tray_cables, TRAY_EXAMPLE),
+                ("sc", self.sc_segs, SC_EXAMPLE),
+                ("hm", self.harm_drives, HARM_EXAMPLE)):
+            if [vars(x) for x in items] != [vars(x) for x in example]:
+                out.add(key)
+        if len(self.panels) != 1 or [vars(x) for x in self.panels[0].loads] \
+                != [vars(x) for x in PANEL_EXAMPLE]:
+            out.add("lc")
+        return out
+
+    def _choose_tabs(self, avail):
+        """Dialog: which calculations go into the report."""
+        changed = self.changed_tabs()
+        default = [k for k in avail if k in changed and k not in self.stale] \
+            or [k for k in avail if k not in self.stale]
+        dlg = tk.Toplevel(self.root)
+        dlg.title(self.t("export_html"))
+        dlg.transient(self.root)
+        frm = ttk.Frame(dlg, padding=12)
+        frm.pack(fill="both", expand=True)
+        ttk.Label(frm, text=self.t("report_pick")).pack(anchor="w",
+                                                        pady=(0, 6))
+        picks = {}
+        for k in avail:
+            picks[k] = tk.BooleanVar(value=k in default)
+            label = self.t(self.results[k][0])
+            if k in self.stale:
+                label += f"  ({self.t('input_error_tag')})"
+            ttk.Checkbutton(frm, text=label, variable=picks[k]).pack(
+                anchor="w")
+        chosen = []
+
+        def ok():
+            chosen.extend(k for k in avail if picks[k].get())
+            dlg.destroy()
+        bf = ttk.Frame(frm)
+        bf.pack(fill="x", pady=(10, 0))
+        ttk.Button(bf, text=self.t("cancel"), command=dlg.destroy).pack(
+            side="right", padx=2)
+        ttk.Button(bf, text=self.t("ok_btn"), command=ok,
+                   style="Accent.TButton").pack(side="right", padx=2)
+        dlg.bind("<Return>", lambda _e: ok())
+        dlg.bind("<Escape>", lambda _e: dlg.destroy())
+        dlg.update_idletasks()
+        x = self.root.winfo_rootx() + max(
+            (self.root.winfo_width() - dlg.winfo_reqwidth()) // 2, 0)
+        y = self.root.winfo_rooty() + max(
+            (self.root.winfo_height() - dlg.winfo_reqheight()) // 3, 0)
+        dlg.geometry(f"+{x}+{y}")
+        dlg.grab_set()
+        dlg.wait_window()
+        return chosen
+
+    def export_html(self, path=None, keys=None):
+        """keys: tabs to include (None = ask); path: None = ask."""
+        self.flush()
+        avail = [k for k in TAB_KEYS if k in self.results]
+        if not avail:
+            self.status(self.t("no_results"), error=True)
+            return
+        if keys is None:
+            keys = self._choose_tabs(avail)
+        keys = [k for k in avail if k in keys]
+        if not keys:
+            return
         items, inputs = [], {}
-        for key in order:
-            if key not in self.results:
-                continue
+        for key in keys:
             title_key, res = self.results[key]
             title = self.t(title_key)
             if callable(res):
@@ -1731,19 +2275,17 @@ class App:
                 inputs[title] = [
                     (self.t(k), self.t(v) if str(v).startswith("opt_")
                      else v) for k, v in self.inputs[key]]
-        if not items:
-            messagebox.showinfo(self.t("export_html"), self.t("results")
-                                + ": -")
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".html", filetypes=[("HTML", "*.html")],
-            initialfile="nec_design_report.html")
+        if path is None:
+            stem = os.path.splitext(os.path.basename(self.project_path))[0] \
+                if self.project_path else "nec_design"
+            path = filedialog.asksaveasfilename(
+                defaultextension=".html", filetypes=[("HTML", "*.html")],
+                initialfile=f"{stem}_report.html")
         if not path:
             return
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(R.to_html(items, self.lang, self.edition, inputs))
-        messagebox.showinfo(self.t("export_html"),
-                            f"{self.t('saved_to')}: {path}")
+        self.status(f"{self.t('saved_to')}: {path}")
 
     def export_csv(self):
         item = self.results.get("lc")
@@ -1759,8 +2301,7 @@ class App:
             return
         with open(path, "w", encoding="utf-8-sig", newline="") as fh:
             fh.write(item[1].csv())
-        messagebox.showinfo(self.t("export_csv"),
-                            f"{self.t('saved_to')}: {path}")
+        self.status(f"{self.t('saved_to')}: {path}")
 
     def project_dict(self):
         self._vars_to_panel()
@@ -1774,6 +2315,16 @@ class App:
                 "harm_drives": [vars(x) for x in self.harm_drives]}
 
     def load_project_dict(self, d):
+        self._suspend += 1
+        try:
+            self._load_project_dict(d)
+        finally:
+            self._suspend -= 1
+        self.stale.clear()
+        self.build()
+        self.recalc_all()
+
+    def _load_project_dict(self, d):
         for k, val in d.get("vars", {}).items():
             if k in self.v:
                 self.v[k].set(val)
@@ -1796,22 +2347,53 @@ class App:
             self.harm_drives = [HM.HarmDrive(**x) for x in d["harm_drives"]]
         self.results.clear()
         self.inputs.clear()
-        self.build()
 
-    def save_project(self):
-        path = filedialog.asksaveasfilename(
-            defaultextension=".json", filetypes=[("Project", "*.json")],
-            initialfile="nec_project.json")
-        if path:
+    def save_project(self, path=None, save_as=False):
+        """Save to the current file (Ctrl+S); ask for a name the first time
+        or with save_as.  Returns True when saved."""
+        if path is None:
+            if self.project_path and not save_as:
+                path = self.project_path
+            else:
+                path = filedialog.asksaveasfilename(
+                    defaultextension=".json",
+                    filetypes=[("Project", "*.json")],
+                    initialfile=os.path.basename(self.project_path)
+                    if self.project_path else "nec_project.json")
+        if not path:
+            return False
+        try:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(self.project_dict(), fh, ensure_ascii=False,
                           indent=2)
+        except OSError as e:
+            messagebox.showerror(self.t("error"), str(e))
+            return False
+        self.project_path = path
+        self.modified = False
+        self._title()
+        self.status(f"{self.t('saved_to')}: {path}")
+        return True
 
-    def open_project(self):
-        path = filedialog.askopenfilename(filetypes=[("Project", "*.json")])
-        if path:
+    def open_project(self, path=None):
+        if not self._confirm_discard():
+            return
+        if path is None:
+            path = filedialog.askopenfilename(
+                filetypes=[("Project", "*.json")])
+        if not path:
+            return
+        try:
             with open(path, encoding="utf-8") as fh:
-                self.load_project_dict(json.load(fh))
+                d = json.load(fh)
+            self.load_project_dict(d)
+        except (OSError, ValueError, TypeError, KeyError) as e:
+            messagebox.showerror(self.t("error"), f"{path}: {e}")
+            return
+        self.project_path = path
+        self.modified = False
+        self._title()
+        self.status(self.t("opened", file=os.path.basename(path)))
 
 
 # ---------------------------------------------------------------------------
@@ -1922,9 +2504,11 @@ def ref_table_text(name):
 
 def main():
     root = tk.Tk()
-    root.geometry("1320x860")
-    root.minsize(1100, 700)
-    App(root)
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    w, h = min(1320, sw - 40), min(860, sh - 80)
+    root.geometry(f"{w}x{h}+{max((sw - w) // 2, 0)}+{max((sh - h) // 3, 0)}")
+    root.minsize(min(1000, w), min(640, h))
+    App(root, session=True)
     root.mainloop()
 
 
